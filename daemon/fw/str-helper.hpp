@@ -234,6 +234,12 @@ public:
       return defaultValue;
     }
   }
+  
+  static void
+  addAvgRTT(int faceid, int avgRTT)
+  {
+    avgRTTMap[faceid] = avgRTT;
+  }
 
 private:
   
