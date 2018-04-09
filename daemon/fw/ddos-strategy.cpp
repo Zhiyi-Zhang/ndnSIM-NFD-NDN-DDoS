@@ -36,6 +36,8 @@ DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   , m_retxSuppression(RETX_SUPPRESSION_INITIAL,
                       RetxSuppressionExponential::DEFAULT_MULTIPLIER,
                       RETX_SUPPRESSION_MAX)
+  , sharedInfo(make_shared<MtForwardingInfo>())
+
 {
   ParsedInstanceName parsed = parseInstanceName(name);
   if (!parsed.parameters.empty()) {
@@ -51,7 +53,7 @@ DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
 const Name&
 DDoSStrategy::getStrategyName()
 {
-  static Name strategyName("/localhost/nfd/strategy/best-route/%FD%05");
+  static Name strategyName("/localhost/nfd/strategy/ddos/%FD%05");
   return strategyName;
 }
 
@@ -130,6 +132,25 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   fib::NextHopList::const_iterator it = nexthops.end();
 
   if (suppression == RetxSuppressionResult::NEW) {
+
+    Name miPrefix;
+    MtForwardingInfo *mi = nullptr;
+
+    std::tie(miPrefix, mi) = this->findPrefixMeasurements(fibEntry);
+
+    // has measurements for forwarding prefix?
+    if (mi == nullptr)
+    {
+      
+      // create measurement table entries for this forwarding prefix
+      MtForwardingInfo *mi = this->addPrefixMeasurements(fibEntry);
+      if (mi == nullptr){
+        std::cout << "it is null" << std::endl;
+      }
+
+    }
+
+
     // forward to nexthop with lowest cost except downstream
     it = std::find_if(nexthops.begin(), nexthops.end(),
                       bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
@@ -183,6 +204,51 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
 {
   // TODO
+}
+
+void
+DDoSStrategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
+                        const Face& inFace, const Data& data)
+{
+  // TODO
+}
+
+void
+DDoSStrategy::beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry)
+{
+  //TODO
+}
+
+std::tuple<Name, MtForwardingInfo*>
+DDoSStrategy::findPrefixMeasurements(const fib::Entry& fibEntry)
+{
+  measurements::Entry* me = this->getMeasurements().get(fibEntry);
+  if (me == nullptr) {
+    return std::make_tuple(Name(), nullptr);
+  }
+
+  MtForwardingInfo* mi = me->getStrategyInfo<MtForwardingInfo>();
+
+  // after runtime strategy change, it's possible that me exists but mi doesn't exist;
+  // this case needs another longest prefix match until mi is found
+  BOOST_ASSERT(mi != nullptr);
+
+  return std::make_tuple(me->getName(), mi);
+}
+
+MtForwardingInfo*
+DDoSStrategy::addPrefixMeasurements(const fib::Entry& fibEntry)
+{
+  measurements::Entry *me = nullptr;
+  me = this->getMeasurements().get(fibEntry);
+  BOOST_ASSERT(me != nullptr);
+  
+  // set lifetime for measurement entry
+  // TODO: Reset to right value based on "decision machine"
+  static const time::nanoseconds ME_LIFETIME = time::seconds(8);
+  this->getMeasurements().extendLifetime(*me, ME_LIFETIME);
+
+  return me->insertStrategyInfo<MtForwardingInfo>().first;
 }
 
 } // namespace fw

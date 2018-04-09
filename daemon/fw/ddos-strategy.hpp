@@ -21,6 +21,7 @@
 #define NFD_DAEMON_FW_DDOS_STRATEGY_HPP
 
 #include "strategy.hpp"
+#include "mt-forwarding-info.hpp"
 #include "retx-suppression-exponential.hpp"
 
 namespace nfd {
@@ -52,11 +53,22 @@ public:
   virtual void
   beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry) override;
 
+  std::tuple<Name, MtForwardingInfo*>
+  findPrefixMeasurements(const fib::Entry& fibEntry);
+
+  MtForwardingInfo*
+  addPrefixMeasurements(const fib::Entry& fibEntry);
+
 
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   static const time::milliseconds RETX_SUPPRESSION_INITIAL;
   static const time::milliseconds RETX_SUPPRESSION_MAX;
   RetxSuppressionExponential m_retxSuppression;
+
+private:
+
+  // holds shared info about forwarding percentages
+  shared_ptr<MtForwardingInfo> sharedInfo;
 };
 
 } // namespace fw
