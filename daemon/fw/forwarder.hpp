@@ -320,7 +320,7 @@ PROTECTED_WITH_TESTS_ELSE_PRIVATE:
     trigger(m_strategyChoice.findEffectiveStrategy(pitEntry));
   }
 
-private:
+public:
   ForwarderCounters m_counters;
   uint32_t m_nodeId;
 

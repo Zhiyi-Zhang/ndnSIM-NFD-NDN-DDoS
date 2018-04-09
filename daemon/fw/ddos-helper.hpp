@@ -24,14 +24,25 @@ public:
                               const Name& interestName,
                               const int length)
   {
-    return 0;
+    Name prefix = interestName.getPrefix(length);
+    uint32_t counter = 0;
+
+    const auto& pitTable = forwarder.m_pit;
+    for (const auto& entry : pitTable) {
+      if (prefix.isPrefixOf(entry.getInterest().getName())) {
+        // if the prefix matches the Interest, add the number of inRecords
+        counter += entry.getInRecords().size();
+      }
+    }
+    return counter;
   }
 
   // @return the current PIT table usage rate
   static double
-  getCurrentPitTableUsage(Forwarder& forwarder)
+  getCurrentPitTableUsage(Forwarder& forwarder, int maxSize)
   {
-    return 0.0;
+    int pitSize = getPitTableSize(forwarder);
+    return pitSize/maxSize;
   }
 
   // @return the current prefix success ratio: suc/all in 1 second
@@ -53,6 +64,14 @@ public:
     return false;
   }
 
+public:
+
+  static uint32_t
+  getPitTableSize(Forwarder& forwarder)
+  {
+    const auto& pitTable = forwarder.m_pit;
+    return pitTable.size();
+  }
 };
 
 

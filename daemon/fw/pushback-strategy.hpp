@@ -10,7 +10,7 @@ namespace nfd {
 namespace fw {
 
 /** \brief Pushback Strategy
- * 
+ *
  */
 class PushbackStrategy: public Strategy
 {
@@ -68,8 +68,7 @@ private:
 
   std::map<int, double> m_avgRTTMap; // <face id, last 100 RTT value average>
 
-  std::map<int, std::map<std::string, ndn::time::steady_clock::TimePoint>> m_interestEntryTime; // <face id, <interest, time>  
-           
+  std::map<int, std::map<std::string, ndn::time::steady_clock::TimePoint>> m_interestEntryTime; // <face id, <interest, time>
 
   static shared_ptr<std::ofstream> m_os;
   static boost::mutex m_mutex;
