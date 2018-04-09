@@ -184,6 +184,18 @@ public: // forwarding entrypoints and tables
     return m_networkRegionTable;
   }
 
+  void
+  setNodeId(uint32_t id)
+  {
+    m_nodeId = id;
+  }
+
+  uint32_t
+  getNodeId() const
+  {
+    return m_nodeId;
+  }
+
 public: // allow enabling ndnSIM content store (will be removed in the future)
   void
   setCsFromNdnSim(ns3::Ptr<ns3::ndn::ContentStore> cs)
@@ -310,6 +322,7 @@ PROTECTED_WITH_TESTS_ELSE_PRIVATE:
 
 private:
   ForwarderCounters m_counters;
+  uint32_t m_nodeId;
 
   FaceTable m_faceTable;
   unique_ptr<fw::UnsolicitedDataPolicy> m_unsolicitedDataPolicy;

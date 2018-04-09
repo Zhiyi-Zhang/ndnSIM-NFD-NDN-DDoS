@@ -30,7 +30,8 @@ namespace nfd {
 namespace pit {
 
 Entry::Entry(const Interest& interest)
-  : m_interest(interest.shared_from_this())
+  : m_congMark(false)
+  , m_interest(interest.shared_from_this())
   , m_nameTreeEntry(nullptr)
 {
 }

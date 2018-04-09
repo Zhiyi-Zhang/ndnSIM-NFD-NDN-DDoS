@@ -13,13 +13,14 @@ namespace fw {
 
 using ndn::Name; 
 
+
 class StrHelper
 {
 
 public:
 
   static void
-  reduceFwPerc(shared_ptr<MtForwardingInfo> forwInfo,
+  reduceFwPerc(MtForwardingInfo* forwInfo,
       const FaceId reducedFaceId,
       const double change)
   {
@@ -88,6 +89,18 @@ public:
 
     return true;
   }
+
+  static bool
+  getCongMark(const ::ndn::TagHost& packet)
+  { 
+    shared_ptr<ns3::ndn::Ns3CCTag> tag = getCCTag(packet);
+    if (tag != nullptr) {
+      return tag->getCongMark();
+    }
+    else {
+      return false;
+    }
+  }  
 
   static shared_ptr<ns3::ndn::Ns3CCTag>
   getCCTag(const ::ndn::TagHost& packet)
@@ -163,16 +176,21 @@ public:
     return std::get<0>(me->insertStrategyInfo<MtForwardingInfo>());
   }
 
-  static bool
+  static bool 
   isCongested(Forwarder& forwarder,
       int faceid,
-      double thresholdRTTInMs = 1000)
-  {
+      std::map<int, double> avgRTTMap,
+      double thresholdRTTInMs = 1000){
+    
     /* Congestion Detection by RTT */
+
+    if (avgRTTMap.find(faceid) == avgRTTMap.end()){
+        return false;
+    }
 
     auto avgRTT = avgRTTMap[faceid]; // get average RTT for this face
     if (avgRTT > thresholdRTTInMs){
-        return true;
+      return true;
     }
     return false;
   }
@@ -234,17 +252,9 @@ public:
       return defaultValue;
     }
   }
-  
-  static void
-  addAvgRTT(int faceid, int avgRTT)
-  {
-    avgRTTMap[faceid] = avgRTT;
-  }
 
 private:
-  
-  static std::map<int, int> avgRTTMap; // <faceid, avgRTT>
-
+ 
   static std::string
   getEnvVar(std::string const& key)
   {

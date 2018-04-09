@@ -236,6 +236,8 @@ public:
    */
   scheduler::EventId m_stragglerTimer;
 
+  bool m_congMark;
+
 private:
   shared_ptr<const Interest> m_interest;
   InRecordCollection m_inRecords;
