@@ -1,7 +1,6 @@
 #ifndef NFD_DAEMON_FW_STRATEGY_HELPER_HPP
 #define NFD_DAEMON_FW_STRATEGY_HELPER_HPP
 
-//#include "../../common.hpp"
 #include "../../../utils/ndn-ns3-packet-tag.hpp"
 #include "../../../utils/ndn-ns3-cc-tag.hpp"
 #include "../../../../core/model/ptr.h"
@@ -11,12 +10,11 @@
 namespace nfd {
 namespace fw {
 
-using ndn::Name; 
+using ndn::Name;
 
 
 class StrHelper
 {
-
 public:
 
   static void
@@ -39,7 +37,7 @@ public:
     sumFWPerc += forwInfo->getforwPerc(reducedFaceId);
     const auto forwMap = forwInfo->getForwPercMap();
 
-//		std::cout << "\n";
+    //		std::cout << "\n";
     for (auto f : forwMap) {
       auto tempChangeRate = changeRate;
       auto &faceId = f.first;
@@ -55,7 +53,7 @@ public:
 
     if (sumFWPerc < 0.999 || sumFWPerc > 1.001) {
       std::cout << StrHelper::getTime() << "ERROR! Sum of fw perc out of range: " << sumFWPerc
-          << "\n";
+                << "\n";
     }
   }
 
@@ -63,10 +61,10 @@ public:
    */
   static bool
   predicate_NextHop_eligible(const Face& inFace, const Interest& interest,
-                  const fib::NextHop& nexthop,
-                  const shared_ptr<pit::Entry>& pitEntry,
-                  bool wantUnused = false,
-                  time::steady_clock::TimePoint now = time::steady_clock::TimePoint::min())
+                             const fib::NextHop& nexthop,
+                             const shared_ptr<pit::Entry>& pitEntry,
+                             bool wantUnused = false,
+                             time::steady_clock::TimePoint now = time::steady_clock::TimePoint::min())
   {
 
     const Face& outFace = nexthop.getFace();
@@ -108,9 +106,9 @@ public:
     auto tag = packet.getTag<ns3::ndn::Ns3PacketTag>();
     if (tag != nullptr) {
       ns3::Ptr<const ns3::Packet> pkt = tag->getPacket();
-      ns3::ndn::Ns3CCTag tempTag;  
+      ns3::ndn::Ns3CCTag tempTag;
       bool hasTag = pkt->PeekPacketTag(tempTag);
-//      std::cout << "Has CC Tag? " << hasTag << "\n";
+      //      std::cout << "Has CC Tag? " << hasTag << "\n";
       shared_ptr<ns3::ndn::Ns3CCTag> ns3ccTag = make_shared<ns3::ndn::Ns3CCTag>();
       if (hasTag) {
         auto it = pkt->GetPacketTagIterator();
@@ -153,13 +151,13 @@ public:
   static std::tuple<Name, MtForwardingInfo*>
   findPrefixMeasurementsLPM(const pit::Entry& pitEntry, MeasurementsAccessor& measurements)
   {
-    
-//    shared_ptr<measurements::Entry> me = measurements.get(name);
-//    shared_ptr<measurements::Entry> me = measurements.findLongestPrefixMatch(name);
+
+    //    shared_ptr<measurements::Entry> me = measurements.get(name);
+    //    shared_ptr<measurements::Entry> me = measurements.findLongestPrefixMatch(name);
     measurements::Entry* me = measurements.findLongestPrefixMatch(pitEntry);
     if (me == nullptr) {
       std::cout << "Name " << pitEntry.getName().toUri() << " not found!\n";
-      return std::forward_as_tuple(Name(), nullptr); 
+      return std::forward_as_tuple(Name(), nullptr);
     }
     MtForwardingInfo* mi = me->getStrategyInfo<MtForwardingInfo>();
     assert(mi != nullptr);
@@ -181,7 +179,6 @@ public:
       int faceid,
       std::map<int, double> avgRTTMap,
       double thresholdRTTInMs = 1000){
-    
     /* Congestion Detection by RTT */
 
     if (avgRTTMap.find(faceid) == avgRTTMap.end()){
@@ -204,17 +201,17 @@ public:
   }
 
   // Print table: time, node, faceid, type, fwPerc
-  static void 
+  static void
   printFwPerc(shared_ptr<std::ostream> os,
-      uint32_t nodeId,
-      std::string prefix,
-      FaceId faceId,
-      std::string type,
-      double fwPerc)
+              uint32_t nodeId,
+              std::string prefix,
+              FaceId faceId,
+              std::string type,
+              double fwPerc)
   {
     *os << ns3::Simulator::Now().ToDouble(ns3::Time::S) << "\t" << nodeId << "\t" << prefix << "\t"
         << faceId << "\t" << type << "\t" << fwPerc << "\n";
-//		os->flush();
+    //		os->flush();
   }
 
   static double
@@ -254,7 +251,6 @@ public:
   }
 
 private:
- 
   static std::string
   getEnvVar(std::string const& key)
   {
@@ -264,7 +260,7 @@ private:
 
   static void
   printFIB(Fib& fib)
-  { 
+  {
     Fib::const_iterator it = fib.begin();
     while (it != fib.end()) {
       std::cout << it->getPrefix() << ": ";
@@ -283,10 +279,12 @@ private:
       std::cout << f.getFace().getLocalUri() << f.getFace().getId() << ", ";
     }
     std::cout << "\n";
-  } 
+  }
 
 };
-}
-}
+
+
+} // namespace fw
+} // namespace nfd
 
 #endif
