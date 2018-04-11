@@ -1,8 +1,6 @@
 #ifndef NFD_DAEMON_FW_DDOS_HELPER_HPP
 #define NFD_DAEMON_FW_DDOS_HELPER_HPP
 
-#include "../../../utils/ndn-ns3-packet-tag.hpp"
-#include "../../../utils/ndn-ns3-cc-tag.hpp"
 #include "../../../../core/model/ptr.h"
 #include "mt-forwarding-info.hpp"
 #include "algorithm.hpp"
@@ -68,33 +66,6 @@ public: // DDoS Related
   }
 
 public: // congestion related APIs
-  static bool
-  getCongMark(const ::ndn::TagHost& packet)
-  {
-    auto tag = packet.getTag<ns3::ndn::Ns3PacketTag>();
-    if (tag == nullptr) {
-      return false;
-    }
-    ns3::Ptr<const ns3::Packet> pkt = tag->getPacket();
-    ns3::ndn::Ns3CCTag tempTag;
-    bool hasTag = pkt->PeekPacketTag(tempTag);
-    // std::cout << "Has CC Tag? " << hasTag << "\n";
-    shared_ptr<ns3::ndn::Ns3CCTag> ns3ccTag = make_shared<ns3::ndn::Ns3CCTag>();
-    if (hasTag) {
-      auto it = pkt->GetPacketTagIterator();
-      while (it.HasNext()) {
-        auto n = it.Next();
-        if (n.GetTypeId() == ns3::ndn::Ns3CCTag::GetTypeId()) {
-          n.GetTag(*ns3ccTag);
-          return ns3ccTag->getCongMark()
-            break;
-        }
-      }
-    }
-    else {
-      return false;
-    }
-  }
 
   static bool
   isCongestedByRTT(Forwarder& forwarder, int faceid,
@@ -113,21 +84,6 @@ public: // congestion related APIs
     return false;
   }
 
-  static bool
-  isCongestedByCoDel(Forwarder& forwarder, int faceid)
-  {
-    auto codelQueue = getCodelQueue(forwarder, faceid);
-
-    if (codelQueue != nullptr) {
-      // std::cout << "Got CodelQueue!\n";
-      // std::cout << "Codel dropping state: " << codelQueue->isInDroppingState() << "\n";
-      bool shouildBeMarked = codelQueue->isOkToMark();
-      return shouildBeMarked;
-    }
-
-    return false;
-  }
-
 public: // general APIs
 
   static uint32_t
@@ -135,32 +91,6 @@ public: // general APIs
   {
     const auto& pitTable = forwarder.m_pit;
     return pitTable.size();
-  }
-
-
-  static ns3::Ptr<ns3::CoDelQueue2>
-  getCodelQueue(Forwarder& forwarder, int faceid)
-  {
-    auto face = forwarder.getFace(faceid);
-    auto netDeviceFace = std::dynamic_pointer_cast<ns3::ndn::NetDeviceFace>(face);
-    if (netDeviceFace == nullptr || netDeviceFace == 0) {
-      return nullptr;
-    }
-    else {
-      ns3::Ptr<ns3::NetDevice> netdevice { netDeviceFace->GetNetDevice() };
-      if (netdevice == nullptr) {
-        std::cout << "Netdev nullptr!\n";
-      }
-      auto ptp = ns3::DynamicCast<ns3::PointToPointNetDevice>(netdevice);
-      if (ptp == nullptr) {
-        std::cout << "Not a PointToPointNetDevice\n";
-      }
-      else {
-        auto q = ptp->GetQueue();
-        auto codelQueue = ns3::DynamicCast<ns3::CoDelQueue2>(q);
-        return codelQueue;
-      }
-    }
   }
 
   static uint32_t
