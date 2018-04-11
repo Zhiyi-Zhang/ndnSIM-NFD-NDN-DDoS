@@ -29,13 +29,13 @@ public:
   std::string m_ownPrefix;
 
   // PIT expiration
-  std::list<uint32_t/* timestamp */, pit::Entry> m_expiration;
+  std::list<std::tuple<uint32_t/* timestamp */, pit::Entry>> m_expiration;
 
   // Data
-  std::list<uint32_t/* timestamp */, pit::Entry> m_data;
+  std::list<std::tuple<uint32_t/* timestamp */, pit::Entry>> m_data;
 
   // Nack
-  std::list<uint32_t/* timestamp */, pit::Entry> m_nack;
+  std::list<std::tuple<uint32_t/* timestamp */, pit::Entry>> m_nack;
 };
 
 }  //fw
