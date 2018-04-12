@@ -54,8 +54,8 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
 
     std::cout << nackReason << std::endl;
     // first delete the tmp PIT entry
-    if (!pitEntry.hasInRecords()) {
-      m_forwarder.m_pit.erase(*pitEntry);
+    if (!pitEntry->hasInRecords()) {
+      this->rejectPendingInterest(pitEntry);
     }
 
     // Step 1: Check success ratio of that prefix per interface;find faces that violates the threshold
