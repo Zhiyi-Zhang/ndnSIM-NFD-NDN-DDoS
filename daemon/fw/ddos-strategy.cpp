@@ -46,23 +46,27 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
 {
   NFD_LOG_TRACE("afterReceiveNack");
-
   lp::NackReason nackReason = nack.getReason();
 
-  std::cout << nackReason << std::endl;
-
   // check if NACK is received beacuse of DDoS
-  if (nackReason == lp::NackReason::FAKE_INTEREST_OVERLOAD 
+  if (nackReason == lp::NackReason::FAKE_INTEREST_OVERLOAD
       || nackReason == lp::NackReason::VALID_INTEREST_OVERLOAD) {
 
-    // Step 1: Check success ratio per prefix
-    // Step 2: For prefixes that violate threshold, check success ratio per interface
-    // Step 3: For interfaces that has high traffic of such prefixes, rate limit
-    // Step 4: If already rate limiting and receive NACK again, pushback to downstream routers
+    std::cout << nackReason << std::endl;
+    // first delete the tmp PIT entry
+    if (!pitEntry.hasInRecords()) {
+      m_forwarder.m_pit.erase(*pitEntry);
+    }
+
+    // Step 1: Check success ratio of that prefix per interface;find faces that violates the threshold
+    // Step 2: Check the
+    // Step 2: For interfaces that has abrupt traffic increase of such prefixes, rate limit
+    // Step 3: If already rate limiting and receive NACK again, pushback to downstream routers
 
     // When traffic is below thresholds and no NACK received, stop rate limit
 
-  } else {
+  }
+  else {
     this->processNack(inFace, nack, pitEntry);
   }
 }
