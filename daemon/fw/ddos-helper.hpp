@@ -30,12 +30,12 @@ public: // DDoS Related
     for (const auto& entry : pitTable) {
       if (prefix.isPrefixOf(entry.getInterest().getName())) {
         for (const auto& record : entry.getInRecords()) {
-          auto search = result.find(record.getFace().getFaceId());
+          auto search = result.find(record.getFace().getId());
           if(search != result.end()) {
-            result[record.getFace().getFaceId()]++;
+            result[record.getFace().getId()]++;
           }
           else {
-            result[record.getFace().getFaceId()] = 1;
+            result[record.getFace().getId()] = 1;
           }
         }
       }
@@ -56,17 +56,18 @@ public: // DDoS Related
   // @param the Interest name
   // @param prefix length (component number). Default: FIB entry size
   static double
-  getPrefixSuccessRatio(DDoSStrategyInfo info)
+  getPrefixSuccessRatio()
   {
     // TODO
     return 0.0;
   }
 
   static std::map<FaceId, double>
-  getFacePrefixSuccessRatio(DDoSStrategyInfo info)
+  getFacePrefixSuccessRatio()
   {
     // TODO
-    return 0.0;
+    std::map<FaceId, double> result;
+    return result;
   }
 
   // @return whether is under DDoS or not, decided by decision machine
