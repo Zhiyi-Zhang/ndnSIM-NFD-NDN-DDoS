@@ -13,31 +13,39 @@ class DDoSHelper
 {
 public: // DDoS Related
 
-  // @return the number of pending interests with the same prefix
+  // @return the number of pending interests with the same prefix of each incoming face
   // @param the Interest name
   // @param prefix length (component number). Default: FIB entry size or + 2?
-  // @note help to calculate the traffic change
-  static uint32_t
+  // @note help to calculate the traffic volume and volume change
+  static std::map<FaceId, uint32_t>
   getInterestNumberWithPrefix(Forwarder& forwarder,
                               const Name& interestName,
                               const int length)
   {
+    std::map<FaceId, uint32_t> result;
     Name prefix = interestName.getPrefix(length);
     uint32_t counter = 0;
 
     const auto& pitTable = forwarder.m_pit;
     for (const auto& entry : pitTable) {
       if (prefix.isPrefixOf(entry.getInterest().getName())) {
-        // if the prefix matches the Interest, add the number of inRecords
-        counter += entry.getInRecords().size();
+        for (const auto& record : entry.getInRecords()) {
+          auto search = result.find(record.getFace().getFaceId());
+          if(search != result.end()) {
+            result[record.getFace().getFaceId()]++;
+          }
+          else {
+            result[record.getFace().getFaceId()] = 1;
+          }
+        }
       }
     }
-    return counter;
+    return result;
   }
 
   // @return the current PIT table usage rate
   static double
-  getCurrentPitTableUsage(Forwarder& forwarder, int maxSize)
+  getCurrentPitTableUsage(Forwarder& forwarder, int maxSize = 300)
   {
     int pitSize = getPitTableSize(forwarder);
     return pitSize/maxSize;
@@ -48,8 +56,14 @@ public: // DDoS Related
   // @param the Interest name
   // @param prefix length (component number). Default: FIB entry size
   static double
-  getPrefixSuccessRatio(const Name& interestName,
-                        const int length)
+  getPrefixSuccessRatio(DDoSStrategyInfo info)
+  {
+    // TODO
+    return 0.0;
+  }
+
+  static std::map<FaceId, double>
+  getFacePrefixSuccessRatio(DDoSStrategyInfo info)
   {
     // TODO
     return 0.0;
@@ -61,25 +75,6 @@ public: // DDoS Related
   isUnderDDoS()
   {
     // TODO
-    return false;
-  }
-
-public: // congestion related APIs
-
-  static bool
-  isCongestedByRTT(Forwarder& forwarder, int faceid,
-                   std::map<int, double> avgRTTMap,
-                   double thresholdRTTInMs = 1000){
-
-    /* Congestion Detection by RTT */
-    if (avgRTTMap.find(faceid) == avgRTTMap.end()){
-      return false;
-    }
-
-    auto avgRTT = avgRTTMap[faceid]; // get average RTT for this face
-    if (avgRTT > thresholdRTTInMs){
-      return true;
-    }
     return false;
   }
 
