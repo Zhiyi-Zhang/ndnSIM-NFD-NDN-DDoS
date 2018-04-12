@@ -1,4 +1,5 @@
 #include "ddos-strategy.hpp"
+#include "ddos-helper.hpp"
 #include <boost/random/uniform_int_distribution.hpp>
 #include <ndn-cxx/util/random.hpp>
 #include "core/logger.hpp"
@@ -10,6 +11,8 @@ namespace fw {
 
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
+  , ProcessNackTraits(this)
+  , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
 {
   this->setInstanceName(makeInstanceName(name, getStrategyName()));
@@ -43,7 +46,25 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
 {
   NFD_LOG_TRACE("afterReceiveNack");
-  // TODO
+
+  lp::NackReason nackReason = nack.getReason();
+
+  std::cout << nackReason << std::endl;
+
+  // check if NACK is received beacuse of DDoS
+  if (nackReason == lp::NackReason::FAKE_INTEREST_OVERLOAD 
+      || nackReason == lp::NackReason::VALID_INTEREST_OVERLOAD) {
+
+    // Step 1: Check success ratio per prefix
+    // Step 2: For prefixes that violate threshold, check success ratio per interface
+    // Step 3: For interfaces that has high traffic of such prefixes, rate limit
+    // Step 4: If already rate limiting and receive NACK again, pushback to downstream routers
+
+    // When traffic is below thresholds and no NACK received, stop rate limit
+
+  } else {
+    this->processNack(inFace, nack, pitEntry);
+  }
 }
 
 void

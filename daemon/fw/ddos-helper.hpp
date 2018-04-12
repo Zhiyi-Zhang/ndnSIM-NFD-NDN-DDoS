@@ -2,7 +2,6 @@
 #define NFD_DAEMON_FW_DDOS_HELPER_HPP
 
 #include "../../../../core/model/ptr.h"
-#include "mt-forwarding-info.hpp"
 #include "algorithm.hpp"
 
 namespace nfd {
@@ -97,24 +96,6 @@ public: // general APIs
   getTime()
   {
     return ndn::time::steady_clock::now().time_since_epoch().count() / 1000000;
-  }
-
-  static MtForwardingInfo*
-  getPrefixMeasurements(const fib::Entry& fibEntry, MeasurementsAccessor& measurements)
-  {
-    measurements::Entry* me = measurements.get(fibEntry);
-    if (me == nullptr) {
-      std::cout << "Didn't find measurement entry for name: " << fibEntry.getPrefix() << "\n";
-      return nullptr;
-    }
-    return me->getStrategyInfo<MtForwardingInfo>();
-  }
-
-  static MtForwardingInfo*
-  addPrefixMeasurements(const fib::Entry& fibEntry, MeasurementsAccessor& measurements)
-  {
-    measurements::Entry* me = measurements.get(fibEntry);
-    return std::get<0>(me->insertStrategyInfo<MtForwardingInfo>());
   }
 };
 

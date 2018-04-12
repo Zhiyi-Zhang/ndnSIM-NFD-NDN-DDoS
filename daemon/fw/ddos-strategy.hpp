@@ -4,12 +4,14 @@
 #include <boost/random/mersenne_twister.hpp>
 #include "face/face.hpp"
 #include "strategy.hpp"
+#include "process-nack-traits.hpp"
 #include "algorithm.hpp"
 
 namespace nfd {
 namespace fw {
 
 class DDoSStrategy : public Strategy
+                    , public ProcessNackTraits<DDoSStrategy>
 {
 public:
   enum DDoSState
@@ -73,7 +75,12 @@ private:
   doLoadBalancing(const Face& inFace, const Interest& interest,
                   const shared_ptr<pit::Entry>& pitEntry);
 
+  friend ProcessNackTraits<DDoSStrategy>;
+
 private:
+  // forwarder
+  Forwarder& m_forwarder;
+
   // the state of the state machine
   DDoSState m_state;
 
