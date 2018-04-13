@@ -89,6 +89,9 @@ private:
 
   // interest satisfaction ratio threshold
   double m_successRatioThreshold;
+
+  std::map<FaceId, uint32_t> m_markedInterestPerFace;
+
 };
 
 } // namespace fw

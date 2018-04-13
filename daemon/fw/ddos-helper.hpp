@@ -56,14 +56,16 @@ public: // DDoS Related
   // @param the Interest name
   // @param prefix length (component number). Default: FIB entry size
   static double
-  getPrefixSuccessRatio()
+  getPrefixSuccessRatio(const Name& interestName,
+                        const int length)
   {
     // TODO
     return 0.0;
   }
 
   static std::map<FaceId, double>
-  getFacePrefixSuccessRatio()
+  getFacePrefixSuccessRatio(const Name& interestName,
+                            const int length)
   {
     // TODO
     std::map<FaceId, double> result;

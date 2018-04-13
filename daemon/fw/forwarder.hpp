@@ -321,6 +321,13 @@ PROTECTED_WITH_TESTS_ELSE_PRIVATE:
   }
 
 public:
+  enum RouterType {
+    CONSUMER_GATEWAY_ROUTER,
+    PRODUCER_GATEWAY_ROUTER,
+    NORMAL_ROUTER
+  }
+
+public:
   ForwarderCounters m_counters;
   uint32_t m_nodeId;
 
@@ -338,9 +345,11 @@ public:
   shared_ptr<Face>   m_csFace;
 
   ns3::Ptr<ns3::ndn::ContentStore> m_csFromNdnSim;
+  RouterType m_routerType;
 
   // allow Strategy (base class) to enter pipelines
   friend class fw::Strategy;
+
 };
 
 } // namespace nfd

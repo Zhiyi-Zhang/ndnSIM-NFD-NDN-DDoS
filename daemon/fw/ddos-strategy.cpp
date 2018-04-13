@@ -58,13 +58,34 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
       this->rejectPendingInterest(pitEntry);
     }
 
-    // Step 1: Check success ratio of that prefix per interface;find faces that violates the threshold
-    // Step 2: Check the
-    // Step 2: For interfaces that has abrupt traffic increase of such prefixes, rate limit
-    // Step 3: If already rate limiting and receive NACK again, pushback to downstream routers
+    // check whether this is the first nack
 
-    // When traffic is below thresholds and no NACK received, stop rate limit
+    // if yes
+    // record the current timestamp
+    // record the current sending rate under prefix P
+    // start recording counters
+    // start limiting rate to 90%
 
+    // if not
+    // update nack timer
+    // limiting rate to 90%
+  }
+  else if (nackReason == lp::NackReason::HINT_CHANGE_NOTICE) {
+    if (m_forwarder.m_routerType = Forwarder::PRODUCER_GATEWAY_ROUTER ||
+        m_forwarder.m_routerType = Forwarder::NORMAL_ROUTER) {
+      // forward the nack to all the incoming interfaces
+      m_forwarder.sendNacks(pitEntry, nack.getHeader());
+    }
+    else {
+      // forward the nack only to good consumers
+      auto inRecords = pitEntry.getInRecords();
+      for (auto entry : inRecords) {
+        if (m_markedInterestPerFace[entry.getFace().getId()] > 0) {
+          continue;
+        }
+        m_forwarder.sendNack(pitEntry, entry.getFace(), nack.getHeader());
+      }
+    }
   }
   else {
     this->processNack(inFace, nack, pitEntry);

@@ -50,6 +50,7 @@ Forwarder::Forwarder()
   , m_measurements(m_nameTree)
   , m_strategyChoice(*this)
   , m_csFace(face::makeNullFace(FaceUri("contentstore://")))
+  , m_routerType(NORMAL_ROUTER)
 {
   getFaceTable().addReserved(m_csFace, face::FACEID_CONTENT_STORE);
 
