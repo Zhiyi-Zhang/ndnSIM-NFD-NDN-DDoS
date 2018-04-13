@@ -11,7 +11,7 @@ namespace nfd {
 namespace fw {
 
 class DDoSStrategy : public Strategy
-                    , public ProcessNackTraits<DDoSStrategy>
+                   , public ProcessNackTraits<DDoSStrategy>
 {
 public:
   enum DDoSState

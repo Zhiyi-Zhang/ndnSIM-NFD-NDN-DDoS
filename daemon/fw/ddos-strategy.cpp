@@ -77,12 +77,14 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
     }
     else {
       // forward the nack only to good consumers
-      auto inRecords = pitEntry->getInRecords();
-      for (auto entry : inRecords) {
-        if (m_markedInterestPerFace[entry.getFace().getId()] > 0) {
+      std::unordered_set<const Face*> downstreams;
+      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
+                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
+      for (const Face* downstream : downstreams) {
+        if (m_markedInterestPerFace[downstream->getId()] > 0) {
           continue;
         }
-        sendNack(pitEntry, entry.getFace(), nack.getHeader());
+        this->sendNack(pitEntry, *downstream, nack.getHeader());
       }
     }
   }
