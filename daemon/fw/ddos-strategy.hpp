@@ -1,11 +1,11 @@
 #ifndef NFD_DAEMON_FW_DDOS_STRATEGY_HPP
 #define NFD_DAEMON_FW_DDOS_STRATEGY_HPP
 
-#include <boost/random/mersenne_twister.hpp>
 #include "face/face.hpp"
 #include "strategy.hpp"
 #include "process-nack-traits.hpp"
 #include "algorithm.hpp"
+#include <boost/random/mersenne_twister.hpp>
 
 namespace nfd {
 namespace fw {

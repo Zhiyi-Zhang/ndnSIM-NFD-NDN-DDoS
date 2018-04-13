@@ -325,7 +325,7 @@ public:
     CONSUMER_GATEWAY_ROUTER,
     PRODUCER_GATEWAY_ROUTER,
     NORMAL_ROUTER
-  }
+  };
 
 public:
   ForwarderCounters m_counters;

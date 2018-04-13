@@ -1,7 +1,6 @@
 #include "ddos-strategy.hpp"
 #include "ddos-helper.hpp"
 #include <boost/random/uniform_int_distribution.hpp>
-#include <ndn-cxx/util/random.hpp>
 #include "core/logger.hpp"
 
 NFD_LOG_INIT("DDoSStrategy");
@@ -71,19 +70,19 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
     // limiting rate to 90%
   }
   else if (nackReason == lp::NackReason::HINT_CHANGE_NOTICE) {
-    if (m_forwarder.m_routerType = Forwarder::PRODUCER_GATEWAY_ROUTER ||
-        m_forwarder.m_routerType = Forwarder::NORMAL_ROUTER) {
+    if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER ||
+        m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
       // forward the nack to all the incoming interfaces
-      m_forwarder.sendNacks(pitEntry, nack.getHeader());
+      sendNacks(pitEntry, nack.getHeader());
     }
     else {
       // forward the nack only to good consumers
-      auto inRecords = pitEntry.getInRecords();
+      auto inRecords = pitEntry->getInRecords();
       for (auto entry : inRecords) {
         if (m_markedInterestPerFace[entry.getFace().getId()] > 0) {
           continue;
         }
-        m_forwarder.sendNack(pitEntry, entry.getFace(), nack.getHeader());
+        sendNack(pitEntry, entry.getFace(), nack.getHeader());
       }
     }
   }
