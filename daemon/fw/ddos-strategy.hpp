@@ -1,6 +1,7 @@
 #ifndef NFD_DAEMON_FW_DDOS_STRATEGY_HPP
 #define NFD_DAEMON_FW_DDOS_STRATEGY_HPP
 
+#include "ddos-record.hpp"
 #include "face/face.hpp"
 #include "strategy.hpp"
 #include "process-nack-traits.hpp"
@@ -9,6 +10,8 @@
 
 namespace nfd {
 namespace fw {
+
+typedef std::map<Name, DDoSRecord> DDoSRecords;
 
 class DDoSStrategy : public Strategy
                    , public ProcessNackTraits<DDoSStrategy>
@@ -90,7 +93,7 @@ private:
   // interest satisfaction ratio threshold
   double m_successRatioThreshold;
 
-  std::map<FaceId, uint32_t> m_markedInterestPerFace;
+  DDoSRecords m_ddosRecords;
 
 };
 

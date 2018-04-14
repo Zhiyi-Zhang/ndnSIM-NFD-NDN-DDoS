@@ -77,14 +77,23 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
     }
     else {
       // forward the nack only to good consumers
-      std::unordered_set<const Face*> downstreams;
-      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
-                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
-      for (const Face* downstream : downstreams) {
-        if (m_markedInterestPerFace[downstream->getId()] > 0) {
-          continue;
+      int prefixLen = nack.getHeader().getPrefixLen();
+      Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
+      auto search = m_ddosRecords.find(prefix);
+      if (search == m_ddosRecords.end()) {
+        sendNacks(pitEntry, nack.getHeader());
+      }
+      else {
+        auto& recordEntry = m_ddosRecords[prefix];
+        std::unordered_set<const Face*> downstreams;
+        std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
+                       [] (const pit::InRecord& inR) { return &inR.getFace(); });
+        for (const Face* downstream : downstreams) {
+          if (recordEntry.m_markedInterestPerFace[downstream->getId()] > 0) {
+            continue;
+          }
+          this->sendNack(pitEntry, *downstream, nack.getHeader());
         }
-        this->sendNack(pitEntry, *downstream, nack.getHeader());
       }
     }
   }
