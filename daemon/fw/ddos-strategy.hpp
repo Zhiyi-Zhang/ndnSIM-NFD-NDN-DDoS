@@ -11,7 +11,7 @@
 namespace nfd {
 namespace fw {
 
-typedef std::map<Name, DDoSRecord> DDoSRecords;
+typedef std::map<Name, shared_ptr<DDoSRecord>> DDoSRecords;
 
 class DDoSStrategy : public Strategy
                    , public ProcessNackTraits<DDoSStrategy>
@@ -70,6 +70,18 @@ protected:
   boost::random::mt19937 m_randomGenerator;
 
 private:
+  void
+  handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
+                         const shared_ptr<pit::Entry>& pitEntry);
+
+  void
+  handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
+                          const shared_ptr<pit::Entry>& pitEntry);
+
+  void
+  handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
+                       const shared_ptr<pit::Entry>& pitEntry);
+
   void
   doBestRoute(const Face& inFace, const Interest& interest,
               const shared_ptr<pit::Entry>& pitEntry);

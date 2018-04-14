@@ -43,8 +43,7 @@ Entry::canMatch(const Interest& interest, size_t nEqualNameComps) const
                                              interest.getName(), 0, nEqualNameComps) == 0);
 
   return m_interest->getName().compare(nEqualNameComps, Name::npos,
-                                       interest.getName(), nEqualNameComps) == 0 &&
-         m_interest->getSelectors() == interest.getSelectors();
+                                       interest.getName(), nEqualNameComps) == 0;
   /// \todo #3162 match Link field
 }
 

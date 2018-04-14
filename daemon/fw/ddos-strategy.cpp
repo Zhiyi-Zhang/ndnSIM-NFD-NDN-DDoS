@@ -45,57 +45,18 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
 {
   NFD_LOG_TRACE("afterReceiveNack");
-  lp::NackReason nackReason = nack.getReason();
+  const auto& nackReason = nack.getReason();
+  std::cout << nackReason << std::endl;
 
   // check if NACK is received beacuse of DDoS
-  if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST
-      || nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
-
-    std::cout << nackReason << std::endl;
-    // first delete the tmp PIT entry
-    if (!pitEntry->hasInRecords()) {
-      this->rejectPendingInterest(pitEntry);
-    }
-
-    // check whether this is the first nack
-
-    // if yes
-    // record the current timestamp
-    // record the current sending rate under prefix P
-    // start recording counters
-    // start limiting rate to 90%
-
-    // if not
-    // update nack timer
-    // limiting rate to 90%
+  if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
+    this->handleFakeInterestNack(inFace, nack, pitEntry);
+  }
+  else if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
+    this->handleValidInterestNack(inFace, nack, pitEntry);
   }
   else if (nackReason == lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
-    if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER ||
-        m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
-      // forward the nack to all the incoming interfaces
-      sendNacks(pitEntry, nack.getHeader());
-    }
-    else {
-      // forward the nack only to good consumers
-      int prefixLen = nack.getHeader().m_prefixLen;
-      Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
-      auto search = m_ddosRecords.find(prefix);
-      if (search == m_ddosRecords.end()) {
-        sendNacks(pitEntry, nack.getHeader());
-      }
-      else {
-        auto& recordEntry = m_ddosRecords[prefix];
-        std::unordered_set<const Face*> downstreams;
-        std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
-                       [] (const pit::InRecord& inR) { return &inR.getFace(); });
-        for (const Face* downstream : downstreams) {
-          if (recordEntry.m_markedInterestPerFace[downstream->getId()] > 0) {
-            continue;
-          }
-          this->sendNack(pitEntry, *downstream, nack.getHeader());
-        }
-      }
-    }
+    this->handleHintChangeNack(inFace, nack, pitEntry);
   }
   else {
     this->processNack(inFace, nack, pitEntry);
@@ -137,6 +98,111 @@ DDoSStrategy::getStrategyName()
 {
   static Name strategyName("ndn:/localhost/nfd/strategy/ddos/%FD%01");
   return strategyName;
+}
+
+void
+DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
+                                     const shared_ptr<pit::Entry>& pitEntry)
+{
+  // first delete the tmp PIT entry
+  if (!pitEntry->hasInRecords()) {
+    this->rejectPendingInterest(pitEntry);
+  }
+  int prefixLen = nack.getHeader().m_prefixLen;
+  Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
+
+  std::list<shared_ptr<pit::Entry>> deleteList;
+  auto search = m_ddosRecords.find(prefix);
+  if (search == m_ddosRecords.end()) { // the first nack
+
+    // create DDoS record entry
+    auto record = make_shared<DDoSRecord>();
+    record->m_prefix = prefix;
+    record->m_type = DDoSRecord::FAKE;
+    record->m_fakeNackCounter = 1;
+    record->m_validNackCounter = 0;
+    record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
+
+    // calculate DDoS record per face pushback weight
+    const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
+    int dedominator = nackNameList.size();
+    auto& pitTable = m_forwarder.m_pit;
+    for (const auto& nackName : nackNameList) { // iterate all fake interest names
+      Interest interest(nackName);
+
+      // find corresponding PIT Entry
+      auto entry = pitTable.find(interest);
+      if (entry != nullptr) {
+
+        // iterate its incoming Faces and calculate pushback weight
+        const auto& inRecords = entry->getInRecords();
+        int inFaceNumber = inRecords.size();
+        for (const auto& inRecord: inRecords) {
+          FaceId faceId = inRecord.getFace().getId();
+          auto innerSearch = record->m_pushbackWeight.find(faceId);
+          if (innerSearch == record->m_pushbackWeight.end()) {
+            record->m_pushbackWeight[faceId] = 1 / ( dedominator * inFaceNumber);
+          }
+          else {
+            record->m_pushbackWeight[faceId] += 1 / ( dedominator * inFaceNumber);
+          }
+        }
+
+        deleteList.push_back(entry);
+      }
+    }
+    m_ddosRecords[prefix] = record;
+  }
+  else {
+    // not the first nack
+  }
+
+  for (auto toBeDelete : deleteList) {
+    rejectPendingInterest(toBeDelete);
+  }
+
+}
+
+void
+DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
+                                      const shared_ptr<pit::Entry>& pitEntry)
+{
+  // first delete the tmp PIT entry
+    if (!pitEntry->hasInRecords()) {
+      this->rejectPendingInterest(pitEntry);
+    }
+}
+
+void
+DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
+                                   const shared_ptr<pit::Entry>& pitEntry)
+{
+  if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER ||
+      m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
+    // forward the nack to all the incoming interfaces
+    sendNacks(pitEntry, nack.getHeader());
+  }
+  else {
+    // forward the nack only to good consumers
+    int prefixLen = nack.getHeader().m_prefixLen;
+    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
+    auto search = m_ddosRecords.find(prefix);
+    if (search == m_ddosRecords.end()) {
+      sendNacks(pitEntry, nack.getHeader());
+    }
+    else {
+      auto& recordEntry = m_ddosRecords[prefix];
+      std::unordered_set<const Face*> downstreams;
+      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
+                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
+      for (const Face* downstream : downstreams) {
+        if (recordEntry->m_markedInterestPerFace[downstream->getId()] > 0) {
+          continue;
+        }
+        this->sendNack(pitEntry, *downstream, nack.getHeader());
+      }
+    }
+  }
 }
 
 void
