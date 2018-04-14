@@ -48,8 +48,8 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
   lp::NackReason nackReason = nack.getReason();
 
   // check if NACK is received beacuse of DDoS
-  if (nackReason == lp::NackReason::FAKE_INTEREST_OVERLOAD
-      || nackReason == lp::NackReason::VALID_INTEREST_OVERLOAD) {
+  if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST
+      || nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
 
     std::cout << nackReason << std::endl;
     // first delete the tmp PIT entry
@@ -69,7 +69,7 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
     // update nack timer
     // limiting rate to 90%
   }
-  else if (nackReason == lp::NackReason::HINT_CHANGE_NOTICE) {
+  else if (nackReason == lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
     if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER ||
         m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
       // forward the nack to all the incoming interfaces
@@ -77,7 +77,7 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
     }
     else {
       // forward the nack only to good consumers
-      int prefixLen = nack.getHeader().getPrefixLen();
+      int prefixLen = nack.getHeader().m_prefixLen;
       Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
       auto search = m_ddosRecords.find(prefix);
       if (search == m_ddosRecords.end()) {

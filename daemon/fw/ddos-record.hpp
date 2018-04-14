@@ -37,15 +37,6 @@ public: // expectations
 public: // counters
   // marked interest number per face under a m_prefix after m_firstNackTimeStamp
   std::map<FaceId, int> m_markedInterestPerFace;
-
-  // interest expiration after m_firstNackTimeStamp per incoming FaceId
-  std::map<FaceId, int> m_expiration;
-
-  // interest satisfaction after m_firstNackTimeStamp per incoming FaceId
-  std::map<FaceId, int> m_satisfaction;
-
-  // interest nack after m_firstNackTimeStamp per incoming FaceId
-  std::map<FaceId, int> m_nack;
 };
 
 } // namespace fw
