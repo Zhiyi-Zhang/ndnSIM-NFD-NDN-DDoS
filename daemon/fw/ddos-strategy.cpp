@@ -45,13 +45,13 @@ void
 DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
 {
-  NFD_LOG_TRACE("afterReceiveNack");
   const auto& nackReason = nack.getReason();
-  std::cout << nackReason << std::endl;
+  NFD_LOG_TRACE("AfterReceiveNack" << nackReason);
 
   // check if NACK is received beacuse of DDoS
   if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
     this->handleFakeInterestNack(inFace, nack, pitEntry);
+    NFD_LOG_TRACE("After handleFakeInterestNack" << nackReason);
   }
   else if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
     this->handleValidInterestNack(inFace, nack, pitEntry);
@@ -105,6 +105,10 @@ void
 DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
                                      const shared_ptr<pit::Entry>& pitEntry)
 {
+  NFD_LOG_TRACE("Handle Nack");
+  NFD_LOG_TRACE("Nack tolerance" << nack.getHeader().m_fakeTolerance);
+  NFD_LOG_TRACE("Nack fake name list" << nack.getHeader().m_fakeInterestNames.size());
+
   // first delete the tmp PIT entry
   if (!pitEntry->hasInRecords()) {
     this->rejectPendingInterest(pitEntry);
@@ -130,6 +134,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
     int dedominator = nackNameList.size();
     auto& pitTable = m_forwarder.m_pit;
+    NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
     for (const auto& nackName : nackNameList) { // iterate all fake interest names
       Interest interest(nackName);
 
@@ -171,6 +176,10 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       newNackHeader.m_fakeInterestNames = perFaceList[it->first];
       newNack.setHeader(newNackHeader);
       m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
+
+      NFD_LOG_TRACE("SendDDoSNack to upstream");
+      NFD_LOG_TRACE("New Nack tolerance" << newNackHeader.m_fakeTolerance);
+      NFD_LOG_TRACE("New Nack fake name list" << newNackHeader.m_fakeInterestNames.size());
     }
   }
   else {
@@ -181,7 +190,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   for (auto toBeDelete : deleteList) {
     rejectPendingInterest(toBeDelete);
   }
-
 }
 
 void

@@ -423,17 +423,17 @@ Forwarder::onIncomingNack(Face& inFace, const lp::Nack& nack)
   nack.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
   ++m_counters.nInNacks;
 
-  const auto& nackResaon = nack.getHeader().getReason();
-  if (nackResaon == ndn::lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD ||
-      nackResaon == ndn::lp::NackReason::DDOS_FAKE_INTEREST ||
-      nackResaon == ndn::lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
-    shared_ptr<pit::Entry> tmpPit;
-    bool exists = false;
-    std::tie(tmpPit, exists) = m_pit.insert(nack.getInterest());
-    this->dispatchToStrategy(*tmpPit,
-                             [&] (fw::Strategy& strategy) { strategy.afterReceiveNack(inFace, nack, tmpPit); });
-    return;
-  }
+  // const auto& nackResaon = nack.getHeader().getReason();
+  // if (nackResaon == ndn::lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD ||
+  //     nackResaon == ndn::lp::NackReason::DDOS_FAKE_INTEREST ||
+  //     nackResaon == ndn::lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
+  //   shared_ptr<pit::Entry> tmpPit;
+  //   bool exists = false;
+  //   std::tie(tmpPit, exists) = m_pit.insert(nack.getInterest());
+  //   this->dispatchToStrategy(*tmpPit,
+  //                            [&] (fw::Strategy& strategy) { strategy.afterReceiveNack(inFace, nack, tmpPit); });
+  //   return;
+  // }
 
   // if multi-access or ad hoc face, drop
   if (inFace.getLinkType() != ndn::nfd::LINK_TYPE_POINT_TO_POINT) {
