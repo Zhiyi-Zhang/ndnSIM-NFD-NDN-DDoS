@@ -485,6 +485,12 @@ Forwarder::onIncomingNack(Face& inFace, const lp::Nack& nack)
 }
 
 void
+Forwarder::sendDDoSNack(const Face& outFace, const lp::Nack& nack)
+{
+  const_cast<Face&>(outFace).sendNack(nack);
+}
+
+void
 Forwarder::onOutgoingNack(const shared_ptr<pit::Entry>& pitEntry, const Face& outFace,
                           const lp::NackHeader& nack)
 {

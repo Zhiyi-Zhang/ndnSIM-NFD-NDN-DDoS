@@ -123,6 +123,8 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_validNackCounter = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
 
+    std::map<FaceId, std::list<Name>> perFaceList;
+
     // calculate DDoS record per face pushback weight
     const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
     int dedominator = nackNameList.size();
@@ -146,15 +148,33 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
           else {
             record->m_pushbackWeight[faceId] += 1 / ( dedominator * inFaceNumber);
           }
+          perFaceList[faceId].push_back(nackName);
         }
-
         deleteList.push_back(entry);
       }
+      else {
+        continue;
+      }
+
     }
     m_ddosRecords[prefix] = record;
+
+    // pushback nacks
+    for (auto it = record->m_pushbackWeight.begin();
+         it != record->m_pushbackWeight.end(); ++it) {
+      ndn::lp::Nack newNack(nack.getInterest());
+      lp::NackHeader newNackHeader;
+      newNackHeader.m_reason = nack.getHeader().m_reason;
+      newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
+      newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second);
+      newNackHeader.m_fakeInterestNames = perFaceList[it->first];
+      newNack.setHeader(newNackHeader);
+      m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
+    }
   }
   else {
     // not the first nack
+    // TODO
   }
 
   for (auto toBeDelete : deleteList) {

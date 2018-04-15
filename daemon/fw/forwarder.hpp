@@ -203,6 +203,13 @@ public: // allow enabling ndnSIM content store (will be removed in the future)
     m_csFromNdnSim = cs;
   }
 
+public: // DDoS
+  /** \brief nothing in PIT will be changed when send DDoS nack, the strategy should
+   * remove corresponding PIT on it own.
+   */
+  void
+  sendDDoSNack(const Face& outFace, const lp::Nack& header);
+
 public:
   /** \brief trigger before PIT entry is satisfied
    *  \sa Strategy::beforeSatisfyInterest
