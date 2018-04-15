@@ -249,6 +249,18 @@ Forwarder::onOutgoingInterest(const shared_ptr<pit::Entry>& pitEntry, Face& outF
 }
 
 void
+Forwarder::ddoSRemovePIT(const shared_ptr<pit::Entry>& pitEntry)
+{
+  NFD_LOG_DEBUG("DDoS remove PIT interest=" << pitEntry->getName());
+
+  // cancel unsatisfy & straggler timer
+  this->cancelUnsatisfyAndStragglerTimer(*pitEntry);
+
+  // set PIT straggler timer
+  this->setStragglerTimer(pitEntry, false);
+}
+
+void
 Forwarder::onInterestReject(const shared_ptr<pit::Entry>& pitEntry)
 {
   if (fw::hasPendingOutRecords(*pitEntry)) {

@@ -79,6 +79,12 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   else if (m_state == DDoS_CONGESTION || m_state == DDoS_ATTACK) {
     this->doLoadBalancing(inFace, interest, pitEntry);
   }
+
+  // auto& pitTable = m_forwarder.m_pit;
+  // NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
+  // for (const auto& entry : pitTable) {
+  //   NFD_LOG_TRACE("\tInterest " << entry.getInterest().getName());
+  // }
 }
 
 void
@@ -116,6 +122,8 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   int prefixLen = nack.getHeader().m_prefixLen;
   Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
 
+  auto& pitTable = m_forwarder.m_pit;
+  NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
   std::list<shared_ptr<pit::Entry>> deleteList;
   auto search = m_ddosRecords.find(prefix);
   if (search == m_ddosRecords.end()) { // the first nack
@@ -133,8 +141,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     // calculate DDoS record per face pushback weight
     const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
     int dedominator = nackNameList.size();
-    auto& pitTable = m_forwarder.m_pit;
-    NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
     for (const auto& nackName : nackNameList) { // iterate all fake interest names
       Interest interest(nackName);
 
@@ -188,7 +194,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   }
 
   for (auto toBeDelete : deleteList) {
-    rejectPendingInterest(toBeDelete);
+    m_forwarder.ddoSRemovePIT(toBeDelete);
   }
 }
 

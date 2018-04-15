@@ -210,6 +210,9 @@ public: // DDoS
   void
   sendDDoSNack(const Face& outFace, const lp::Nack& header);
 
+  void
+  ddoSRemovePIT(const shared_ptr<pit::Entry>& pitEntry);
+
 public:
   /** \brief trigger before PIT entry is satisfied
    *  \sa Strategy::beforeSatisfyInterest
