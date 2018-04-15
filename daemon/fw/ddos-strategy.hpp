@@ -119,11 +119,8 @@ private:
 
   double m_checkWindow = 1;
 
-  // interest buffer per face in last check window
-  std::map<FaceId, std::list<Name>> interestFaceBuffer;
-
   // prefixes in last check window
-  std::set<Name> prefixBuffer;
+  // std::set<Name> prefixBuffer;
 
   // last NACK count seen for each prefix
   std::map<Name, int> lastNackCountSeen;

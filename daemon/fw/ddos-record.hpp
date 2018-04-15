@@ -38,6 +38,9 @@ public: // expectations
 
 public: // counters
 
+  // interest buffer per face in last check window
+  std::map<FaceId, std::list<Name>> m_perFaceInterestBuffer;
+
   // pushback weight per face
   std::map<FaceId, double> m_pushbackWeight;
 

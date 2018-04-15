@@ -71,12 +71,12 @@ DDoSStrategy::scheduleNextChecks()
 {
   NFD_LOG_TRACE("Scheduling next check");
   if (!m_applyRateAndForwardEvent.IsRunning()){
-      m_applyRateAndForwardEvent = ns3::Simulator::Schedule(ns3::Seconds(m_checkWindow), 
+      m_applyRateAndForwardEvent = ns3::Simulator::Schedule(ns3::Seconds(m_checkWindow),
                                                   &DDoSStrategy::applyRateAndForward, this);
   }
 }
 
-void 
+void
 DDoSStrategy::applyRateAndForward()
 {
 
@@ -84,68 +84,62 @@ DDoSStrategy::applyRateAndForward()
   // TODO: Handle stopping rate limiting
 
   NFD_LOG_TRACE("Applying rate and forwarding");
-  // for each prefix
-  for (auto pbIt = prefixBuffer.begin(); pbIt != prefixBuffer.end(); ++pbIt) {
-    // find the corresponding record
-    auto recordIt = m_ddosRecords.find(*pbIt);
 
-    // for each face
-    for (auto ibIt = interestFaceBuffer.begin(); 
-      ibIt != interestFaceBuffer.end(); ++ibIt) {
-      // find the corresponding weight
-      auto record = recordIt->second;
+  // for each DDoS record
+  for (auto& recordEntry : m_ddosRecords) {
+    auto& record = recordEntry.second;
+    const auto& prefix = record->m_prefix;
 
-      auto weightIt = record->m_pushbackWeight.find(ibIt->first);
-      
-      // if weight for this face exists
-      if (weightIt != record->m_pushbackWeight.end()) {
+    for (auto& perFaceBufInterest : recordEntry.second->m_perFaceInterestBuffer) {
+      auto& faceId = perFaceBufInterest.first;
+      auto interfaceWeight = record->m_pushbackWeight.find(faceId);
+
+      if (interfaceWeight != record->m_pushbackWeight.end()) {
 
         // calculate number of allowed interest for this face
-        int allowedInterests;
+        int allowedInterests = 10000;
 
         // not rate limiting on this prefix yet
         if (!record->m_rateLimiting) {
           NFD_LOG_DEBUG("Not yet rate limiting");
-          allowedInterests = record->m_fakeInterestTolerance * (weightIt->second);
+          allowedInterests = record->m_fakeInterestTolerance * (interfaceWeight->second);
           record->m_rateLimiting = true;
-          lastNackCountSeen[*pbIt] = record->m_fakeNackCounter;
-
-          // if no new NACK has been received
-        } else if (lastNackCountSeen[*pbIt] == record->m_fakeNackCounter) {
+          lastNackCountSeen[prefix] = record->m_fakeNackCounter;
+        }
+        // if no new NACK has been received
+        else if (lastNackCountSeen[prefix] == record->m_fakeNackCounter) {
           NFD_LOG_DEBUG("Rate limiting but no new NACK received");
           allowedInterests = record->m_lastAllowedInterestCount + m_additiveIncrease;
-
-          // if new NACK has been received
-        } else if (lastNackCountSeen[*pbIt] < record->m_fakeNackCounter) {
+        }
+        // if new NACK has been received
+        else if (lastNackCountSeen[prefix] < record->m_fakeNackCounter) {
           NFD_LOG_DEBUG("Rate limiting and new NACK received");
-          allowedInterests = record->m_lastAllowedInterestCount/m_multiplicativeDecrease;
+          allowedInterests = record->m_lastAllowedInterestCount / m_multiplicativeDecrease;
+          lastNackCountSeen[prefix]++;
         }
 
         // update m_fakeInterestTolerance
         record->m_lastAllowedInterestCount = allowedInterests;
-
         NFD_LOG_INFO("Applying rate " << allowedInterests);
 
         // forward those number of allowed interests
         for (int i = 0; i != allowedInterests; ++i) {
-          if (ibIt->second.size() > (unsigned) i) {
-            std::list<Name>::iterator innerIt = ibIt->second.begin();
+          if (perFaceBufInterest.second.size() > (unsigned) i) {
+            auto innerIt = perFaceBufInterest.second.begin();
             std::advance(innerIt, i);
 
             Name interest_copy(*innerIt);
-            auto interest = std::make_shared<ndn::Interest>(interest_copy);
-            shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(*interest);
-            this->doLoadBalancing(*getFace(ibIt->first), 
-                                  *interest, 
-                                  pitEntry);
+            Interest interest(interest_copy);
+            shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(interest);
+            this->doLoadBalancing(*getFace(faceId), interest, pitEntry);
+            NFD_LOG_INFO("After loop, we sent out Interest " << interest.getName());
           }
         }
       }
-    } 
-  }
+    }
 
-  prefixBuffer.clear();
-  interestFaceBuffer.clear();
+    record->m_perFaceInterestBuffer.clear();
+  }
   scheduleNextChecks();
 }
 
@@ -159,23 +153,20 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
     return;
   }
 
-  if (m_state == DDoS_NORMAL) {
-    NFD_LOG_TRACE("Interest Received: Current state NORMAL");
+  bool isPrefixUnderDDoS = false;
+  for (auto& record : m_ddosRecords) {
+    if (record.first.isPrefixOf(interest.getName())) {
+      isPrefixUnderDDoS = true;
+      record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest.getName());
+    }
+  }
+
+  if (!isPrefixUnderDDoS) {
+    NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
     this->doBestRoute(inFace, interest, pitEntry);
   }
-  else if (m_state == DDoS_CONGESTION || m_state == DDoS_ATTACK) {
-    NFD_LOG_TRACE("Interest Received: Current state CONGESTION/ATTACK");
-    Name prefix = interest.getName().getPrefix(-1);
-    auto search = m_ddosRecords.find(prefix);
-
-    // no records for this prefix exist, forward
-    if (search == m_ddosRecords.end()) {
-      this->doLoadBalancing(inFace, interest, pitEntry);
-    } else {
-      interestFaceBuffer[inFace.getId()].push_back(interest.getName());
-      prefixBuffer.insert(prefix);
-    }
-
+  else if (isPrefixUnderDDoS) {
+    NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
   }
 }
 
