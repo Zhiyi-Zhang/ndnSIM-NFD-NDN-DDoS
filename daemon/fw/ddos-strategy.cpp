@@ -129,10 +129,10 @@ DDoSStrategy::applyRateAndForward()
             std::advance(innerIt, i);
 
             Name interest_copy(*innerIt);
-            Interest interest(interest_copy);
-            shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(interest);
-            this->doLoadBalancing(*getFace(faceId), interest, pitEntry);
-            NFD_LOG_INFO("After loop, we sent out Interest " << interest.getName());
+            auto interest = std::make_shared<ndn::Interest>(interest_copy);
+            shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(*interest);
+            this->doLoadBalancing(*getFace(faceId), *interest, pitEntry);
+            NFD_LOG_INFO("After loop, we sent out Interest " << interest->getName());
           }
         }
       }
