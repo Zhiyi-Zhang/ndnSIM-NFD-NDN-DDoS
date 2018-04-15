@@ -3,10 +3,11 @@
 #include <boost/random/uniform_int_distribution.hpp>
 #include "core/logger.hpp"
 
-NFD_LOG_INIT("DDoSStrategy");
-
 namespace nfd {
 namespace fw {
+
+NFD_LOG_INIT("DDoSStrategy");
+NFD_REGISTER_STRATEGY(DDoSStrategy);
 
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
