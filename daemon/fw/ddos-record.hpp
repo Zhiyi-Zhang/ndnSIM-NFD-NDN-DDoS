@@ -25,11 +25,15 @@ public: // required field
   int m_fakeNackCounter;
   int m_validNackCounter;
 
+  // has rate limiting started?
+  bool m_rateLimiting;
+
 
 public: // expectations
 
   // interest number per second
   int m_fakeInterestTolerance;
+  int m_lastAllowedInterestCount;
 
 
 public: // counters

@@ -90,7 +90,17 @@ private:
   doLoadBalancing(const Face& inFace, const Interest& interest,
                   const shared_ptr<pit::Entry>& pitEntry);
 
+  void
+  scheduleNextChecks();
+
+  void
+  applyRateAndForward();
+
   friend ProcessNackTraits<DDoSStrategy>;
+
+protected:
+  ns3::EventId m_applyRateAndForwardEvent; ///< @brief EventId of check violation event
+  bool m_noRunsYet;
 
 private:
   // forwarder
@@ -99,13 +109,24 @@ private:
   // the state of the state machine
   DDoSState m_state;
 
-  // interests/sec threshold
-  double m_rateThreshold;
+  // additive increase constant
+  double m_additiveIncrease = 1;
 
-  // interest satisfaction ratio threshold
-  double m_successRatioThreshold;
+  // multiplicate decrease constant
+  double m_multiplicativeDecrease = 2;
 
   DDoSRecords m_ddosRecords;
+
+  double m_checkWindow = 1;
+
+  // interest buffer per face in last check window
+  std::map<FaceId, std::list<Name>> interestFaceBuffer;
+
+  // prefixes in last check window
+  std::set<Name> prefixBuffer;
+
+  // last NACK count seen for each prefix
+  std::map<Name, int> lastNackCountSeen;
 
 };
 

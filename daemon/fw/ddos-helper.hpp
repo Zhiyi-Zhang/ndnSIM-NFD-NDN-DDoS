@@ -24,7 +24,6 @@ public: // DDoS Related
   {
     std::map<FaceId, uint32_t> result;
     Name prefix = interestName.getPrefix(length);
-    uint32_t counter = 0;
 
     const auto& pitTable = forwarder.m_pit;
     for (const auto& entry : pitTable) {
