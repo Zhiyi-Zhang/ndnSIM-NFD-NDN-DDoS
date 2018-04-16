@@ -13,7 +13,7 @@ NFD_REGISTER_STRATEGY(DDoSStrategy);
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
-  , m_noEventRunsYet(true)
+  , m_noApplyRateEventRunsYet(true)
   , m_timer(0)
   , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
@@ -93,6 +93,7 @@ void DDoSStrategy::revertState()
   if (m_state == DDoS_ATTACK) {
     m_state = DDoS_NORMAL;
     m_ddosRecords.clear();
+    m_noApplyRateEventRunsYet = true;
     NFD_LOG_DEBUG("Changed state to DDoS_NORMAL");
   }
 }
@@ -228,9 +229,9 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list " << nack.getHeader().m_fakeInterestNames.size());
 
-  if (m_noEventRunsYet && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+  if (m_noApplyRateEventRunsYet && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
     scheduleApplyRateAndForwardEvent();
-    m_noEventRunsYet = false;
+    m_noApplyRateEventRunsYet = false;
   }
 
   // no matter the prefix, change state to DDoS_ATTACK
