@@ -97,8 +97,9 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
     hopCount = *hopCountTag;
   }
   // interest received directly from consumer's NFD
-  if (hopCount == 1) {
+  if (hopCount == 1 && m_routerType != CONSUMER_GATEWAY_ROUTER) {
     m_routerType = CONSUMER_GATEWAY_ROUTER;
+    std::cout << "************** I am consumer gateway router" << std::endl;
   }
   interest.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
 
@@ -331,7 +332,7 @@ Forwarder::onIncomingData(Face& inFace, const Data& data)
     hopCount = *hopCountTag;
   }
   // data received directly from consumer's local NFD
-  if (hopCount == 1) {
+  if (hopCount == 1 && m_routerType != PRODUCER_GATEWAY_ROUTER) {
     m_routerType = PRODUCER_GATEWAY_ROUTER;
   }
   data.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));

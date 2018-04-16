@@ -28,6 +28,9 @@ public: // required field
   // has rate limiting started?
   bool m_rateLimiting;
 
+  // used by revert Event
+  int m_revertTimerCounter;
+
 
 public: // expectations
 

@@ -13,8 +13,7 @@ NFD_REGISTER_STRATEGY(DDoSStrategy);
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
-  , m_noApplyRateEventRunsYet(true)
-  , m_timer(0)
+  , m_timer(1)
   , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
 {
@@ -35,7 +34,6 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
   // check if NACK is received beacuse of DDoS
   if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
     this->handleFakeInterestNack(inFace, nack, pitEntry);
-    NFD_LOG_TRACE("After handleFakeInterestNack " << nackReason);
   }
   else if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
     this->handleValidInterestNack(inFace, nack, pitEntry);
@@ -73,10 +71,22 @@ void
 DDoSStrategy::revertState()
 {
   NFD_LOG_TRACE("Reverting state");
-  if (m_state == DDoS_ATTACK) {
+
+  std::list<Name> toBeDelete;
+  for (auto& recordEntry : m_ddosRecords) {
+    auto& record = recordEntry.second;
+    record->m_revertTimerCounter--;
+    if (record->m_revertTimerCounter == 0) {
+      toBeDelete.push_back(recordEntry.first);
+    }
+  }
+  for (const auto& name : toBeDelete) {
+    m_ddosRecords.erase(name);
+  }
+
+  // no DDoS records, change state to normal
+  if (m_ddosRecords.size() == 0) {
     m_state = DDoS_NORMAL;
-    m_ddosRecords.clear();
-    m_noApplyRateEventRunsYet = true;
     NFD_LOG_DEBUG("Changed state to DDoS_NORMAL");
   }
 }
@@ -101,6 +111,7 @@ DDoSStrategy::applyRateAndForward()
     auto& record = recordEntry.second;
     const auto& prefix = record->m_prefix;
 
+    // for each face that has Interest buffer under the prefix
     for (auto& perFaceBufInterest : recordEntry.second->m_perFaceInterestBuffer) {
       auto& faceId = perFaceBufInterest.first;
       auto interfaceWeight = record->m_pushbackWeight.find(faceId);
@@ -212,23 +223,15 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
-  if (m_noApplyRateEventRunsYet && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+    m_state = DDoS_ATTACK;
     scheduleApplyRateAndForwardEvent();
-    m_noApplyRateEventRunsYet = false;
+    scheduleRevertStateEvent();
+
+    // no matter the prefix, change state to DDoS_ATTACK
+    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
   }
 
-  // no matter the prefix, change state to DDoS_ATTACK
-  m_state = DDoS_ATTACK;
-  NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-
-  // change the state to DDoS_NORMAL as per NACK timer
-  m_timer = nack.getHeader().m_timer;
-  scheduleRevertStateEvent();
-
-  // first delete the tmp PIT entry
-  if (!pitEntry->hasInRecords()) {
-    this->rejectPendingInterest(pitEntry);
-  }
   int prefixLen = nack.getHeader().m_prefixLen;
   Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
 
@@ -247,14 +250,13 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_rateLimiting = false;
     record->m_lastAllowedInterestCount = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
+    record->m_revertTimerCounter = nack.getHeader().m_timer;
 
     std::map<FaceId, std::list<Name>> perFaceList;
 
     // calculate DDoS record per face pushback weight
     const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
     double denominator = nackNameList.size();
-    auto& pitTable = m_forwarder.m_pit;
-    NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
     for (const auto& nackName : nackNameList) { // iterate all fake interest names
       Interest interest(nackName);
 
@@ -288,12 +290,16 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     // pushback nacks
     for (auto it = record->m_pushbackWeight.begin();
          it != record->m_pushbackWeight.end(); ++it) {
-      ndn::lp::Nack newNack(nack.getInterest());
+
       lp::NackHeader newNackHeader;
       newNackHeader.m_reason = nack.getHeader().m_reason;
       newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
       newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second);
       newNackHeader.m_fakeInterestNames = perFaceList[it->first];
+
+      Interest interest(perFaceList[it->first].front());
+      auto entry = pitTable.find(interest);
+      ndn::lp::Nack newNack(entry->getInterest());
       newNack.setHeader(newNackHeader);
       m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
 

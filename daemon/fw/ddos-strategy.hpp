@@ -106,7 +106,6 @@ private:
 
 protected:
   ns3::EventId m_applyRateAndForwardEvent; ///< @brief EventId of apply rate and forward event
-  bool m_noApplyRateEventRunsYet;
 
   ns3::EventId m_revertStateEvent; ///< @brief EventId of revert state event
   uint64_t m_timer;
