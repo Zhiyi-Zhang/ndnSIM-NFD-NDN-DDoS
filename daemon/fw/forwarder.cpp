@@ -95,13 +95,15 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
   auto hopCountTag = interest.getTag<lp::HopCountTag>();
   if (hopCountTag != nullptr) {
     hopCount = *hopCountTag;
+    interest.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
   }
   // interest received directly from consumer's NFD
-  if (hopCount == 1 && m_routerType != CONSUMER_GATEWAY_ROUTER) {
+  if (hopCount == 2 && m_routerType != CONSUMER_GATEWAY_ROUTER) {
     m_routerType = CONSUMER_GATEWAY_ROUTER;
-    std::cout << "************** I am consumer gateway router" << std::endl;
+    std::cout << "************** I am a consumer gateway router" << std::endl;
+    std::cout << interest.getName() << std::endl;
   }
-  interest.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
+
 
   // /localhost scope control
   bool isViolatingLocalhost = inFace.getScope() == ndn::nfd::FACE_SCOPE_NON_LOCAL &&
