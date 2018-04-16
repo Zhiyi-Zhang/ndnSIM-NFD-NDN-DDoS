@@ -9,40 +9,37 @@ namespace fw {
 
 class DDoSRecord
 {
-public:
-  enum DDoSType {
-    VALID,
-    FAKE,
-    MIXED
-  };
-
-public: // required field
+public: // essential field
   Name m_prefix;
-
-  DDoSType m_type;
 
   // count how many DDoS records has been received after the first one
   int m_fakeNackCounter;
   int m_validNackCounter;
 
-  // has rate limiting started?
-  bool m_rateLimiting;
+  // interest number per second
+  // should be reset when new nack arrives
+  int m_fakeInterestTolerance;
+
+public: // for consumer router's use ONLY
 
   // used by revert Event
   int m_revertTimerCounter;
 
-
-public: // expectations
-
-  // interest number per second
-  int m_fakeInterestTolerance;
-  int m_lastAllowedInterestCount;
-
-
-public: // counters
-
   // interest buffer per face in last check window
   std::map<FaceId, std::list<Name>> m_perFaceInterestBuffer;
+
+  // has rate limiting started?
+  bool m_rateLimiting;
+
+  // if the counter == 3, meaning for 3 checks their is no new nack comes in
+  // then we can remove the record
+  // should be reset when new nack arrives
+  int m_additiveIncreaseCounter;
+
+  // the step of additive step, default to be tolerance / 3 + 1
+  int m_additiveIncreaseStep;
+
+public: // for push back
 
   // pushback weight per face
   std::map<FaceId, double> m_pushbackWeight;

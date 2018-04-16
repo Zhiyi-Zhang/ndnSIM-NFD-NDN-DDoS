@@ -94,7 +94,7 @@ private:
   scheduleApplyRateAndForwardEvent();
 
   void
-  applyRateAndForward();
+  applyForwardWithRateLimit();
 
   void
   scheduleRevertStateEvent();
@@ -105,10 +105,9 @@ private:
   friend ProcessNackTraits<DDoSStrategy>;
 
 protected:
-  ns3::EventId m_applyRateAndForwardEvent; ///< @brief EventId of apply rate and forward event
+  ns3::EventId m_applyForwardWithRateLimitEvent; ///< @brief EventId of apply rate and forward event
 
   ns3::EventId m_revertStateEvent; ///< @brief EventId of revert state event
-  uint64_t m_timer;
 
 private:
   // forwarder
@@ -117,19 +116,10 @@ private:
   // the state of the state machine
   DDoSState m_state;
 
-  // additive increase constant
-  double m_additiveIncrease = 1;
-
-  // multiplicate decrease constant
-  double m_multiplicativeDecrease = 2;
-
   DDoSRecords m_ddosRecords;
 
-  double m_checkWindow = 1;
-
-  // last NACK count seen for each prefix
-  std::map<Name, int> lastNackCountSeen;
-
+  // the time unit of revert event and rate limit event
+  uint64_t m_timer;
 };
 
 } // namespace fw

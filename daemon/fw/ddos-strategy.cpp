@@ -13,9 +13,9 @@ NFD_REGISTER_STRATEGY(DDoSStrategy);
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
-  , m_timer(1)
   , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
+  , m_timer(1)
 {
   this->setInstanceName(makeInstanceName(name, getStrategyName()));
 }
@@ -77,14 +77,23 @@ DDoSStrategy::revertState()
     auto& record = recordEntry.second;
     record->m_revertTimerCounter--;
     if (record->m_revertTimerCounter == 0) {
-      toBeDelete.push_back(recordEntry.first);
+      // apply additive increase to the tolerance after nack's limit timer
+      record->m_fakeInterestTolerance += record->m_additiveIncreaseStep;
+      record->m_additiveIncreaseCounter++;
+
+      // when there is no new nack for three times, remove the DDoS Record
+      if (record->m_additiveIncreaseCounter == 3) {
+        toBeDelete.push_back(recordEntry.first);
+      }
     }
   }
+
+  // delete DDoS records that can be deleted
   for (const auto& name : toBeDelete) {
     m_ddosRecords.erase(name);
   }
 
-  // no DDoS records, change state to normal
+  // if no DDoS records in the list, change state to normal
   if (m_ddosRecords.size() == 0) {
     m_state = DDoS_NORMAL;
     NFD_LOG_DEBUG("Changed state to DDoS_NORMAL");
@@ -95,71 +104,50 @@ void
 DDoSStrategy::scheduleApplyRateAndForwardEvent()
 {
   NFD_LOG_TRACE("Scheduling apply rate and forward event");
-  if (!m_applyRateAndForwardEvent.IsRunning()) {
-      m_applyRateAndForwardEvent = ns3::Simulator::Schedule(ns3::Seconds(m_checkWindow),
-                                                  &DDoSStrategy::applyRateAndForward, this);
+  if (!m_applyForwardWithRateLimitEvent.IsRunning()) {
+      m_applyForwardWithRateLimitEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
+                                                  &DDoSStrategy::applyForwardWithRateLimit, this);
   }
 }
 
 void
-DDoSStrategy::applyRateAndForward()
+DDoSStrategy::applyForwardWithRateLimit()
 {
-  NFD_LOG_TRACE("Applying rate and forwarding");
+  NFD_LOG_TRACE("Applying forwarding with rate limit");
 
   // for each DDoS record
   for (auto& recordEntry : m_ddosRecords) {
     auto& record = recordEntry.second;
-    const auto& prefix = record->m_prefix;
 
     // for each face that has Interest buffer under the prefix
     for (auto& perFaceBufInterest : recordEntry.second->m_perFaceInterestBuffer) {
       auto& faceId = perFaceBufInterest.first;
-      auto interfaceWeight = record->m_pushbackWeight.find(faceId);
+      int limit = 10000;
 
-      if (interfaceWeight != record->m_pushbackWeight.end()) {
+      auto interfaceWeightEntry = record->m_pushbackWeight.find(faceId);
+      if (interfaceWeightEntry != record->m_pushbackWeight.end()) {
+        // calculate the current rate limit of the face
+        limit = static_cast<int>(interfaceWeightEntry->second * record->m_fakeInterestTolerance + 0.5);
+        NFD_LOG_INFO("The new limit on the face is " << limit);
+      }
+      else {
+        // there is no more limit on the current face
+        NFD_LOG_INFO("No more rate limit on the face");
+      }
 
-        // calculate number of allowed interest for this face
-        int allowedInterests = 10000;
+      for (int i = 0; i != limit; ++i) {
+        if (perFaceBufInterest.second.size() > (unsigned) i) {
+          auto innerIt = perFaceBufInterest.second.begin();
+          std::advance(innerIt, i);
 
-        // not rate limiting on this prefix yet
-        if (!record->m_rateLimiting) {
-          NFD_LOG_DEBUG("Not yet rate limiting");
-          allowedInterests = record->m_fakeInterestTolerance * (interfaceWeight->second);
-          record->m_rateLimiting = true;
-          lastNackCountSeen[prefix] = record->m_fakeNackCounter;
-        }
-        // if no new NACK has been received
-        else if (lastNackCountSeen[prefix] == record->m_fakeNackCounter) {
-          NFD_LOG_DEBUG("Rate limiting but no new NACK received");
-          allowedInterests = record->m_lastAllowedInterestCount + m_additiveIncrease;
-        }
-        // if new NACK has been received
-        else if (lastNackCountSeen[prefix] < record->m_fakeNackCounter) {
-          NFD_LOG_DEBUG("Rate limiting and new NACK received");
-          allowedInterests = record->m_lastAllowedInterestCount / m_multiplicativeDecrease;
-          lastNackCountSeen[prefix]++;
-        }
-
-        // update m_fakeInterestTolerance
-        record->m_lastAllowedInterestCount = allowedInterests;
-        NFD_LOG_INFO("Applying rate " << allowedInterests);
-
-        // forward those number of allowed interests
-        for (int i = 0; i != allowedInterests; ++i) {
-          if (perFaceBufInterest.second.size() > (unsigned) i) {
-            auto innerIt = perFaceBufInterest.second.begin();
-            std::advance(innerIt, i);
-
-            Name interest_copy(*innerIt);
-            auto interest = std::make_shared<ndn::Interest>(interest_copy);
-            shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(*interest);
-            this->doLoadBalancing(*getFace(faceId), *interest, pitEntry);
-            NFD_LOG_INFO("After loop, we sent out Interest " << interest->getName());
-          }
+          Name interest_copy(*innerIt);
+          auto interest = std::make_shared<ndn::Interest>(interest_copy);
+          shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(*interest);
+          this->doLoadBalancing(*getFace(faceId), *interest, pitEntry);
+          NFD_LOG_INFO("After loop, we sent out Interest " << interest->getName());
         }
       }
     }
-
     record->m_perFaceInterestBuffer.clear();
   }
 
@@ -178,11 +166,15 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
     return;
   }
 
+
   bool isPrefixUnderDDoS = false;
   for (auto& record : m_ddosRecords) {
     if (record.first.isPrefixOf(interest.getName())) {
       isPrefixUnderDDoS = true;
-      record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest.getName());
+      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+        record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest.getName());
+        NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
+      }
     }
   }
 
@@ -190,29 +182,13 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
     NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
     this->doBestRoute(inFace, interest, pitEntry);
   }
-  else if (isPrefixUnderDDoS) {
-    NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
+  else {
+    if (m_forwarder.m_routerType != Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      this->doLoadBalancing(inFace, interest, pitEntry);
+      NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
+    }
   }
-}
 
-void
-DDoSStrategy::beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry)
-{
-  // TODO
-}
-
-void
-DDoSStrategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
-                                    const Face& inFace, const Data& data)
-{
-  // TODO
-}
-
-const Name&
-DDoSStrategy::getStrategyName()
-{
-  static Name strategyName("ndn:/localhost/nfd/strategy/ddos/%FD%01");
-  return strategyName;
 }
 
 void
@@ -223,99 +199,122 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
-  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-    m_state = DDoS_ATTACK;
-    scheduleApplyRateAndForwardEvent();
-    scheduleRevertStateEvent();
+  Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
 
-    // no matter the prefix, change state to DDoS_ATTACK
-    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-  }
-
-  int prefixLen = nack.getHeader().m_prefixLen;
-  Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
-
+  // get PIT table
   auto& pitTable = m_forwarder.m_pit;
   NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
-  std::list<shared_ptr<pit::Entry>> deleteList;
-  auto search = m_ddosRecords.find(prefix);
-  if (search == m_ddosRecords.end()) { // the first nack
 
-    // create DDoS record entry
-    auto record = make_shared<DDoSRecord>();
+  // to record the Pit Entry to be removed
+  std::list<shared_ptr<pit::Entry>> deleteList;
+
+  // to record per face Interest list to be nacked
+  std::map<FaceId, std::list<Name>> perFaceList;
+
+  // to keep the corresponding DDoS record
+  shared_ptr<DDoSRecord> record = nullptr;
+
+  auto search = m_ddosRecords.find(prefix);
+  if (search == m_ddosRecords.end()) {
+    // the first nack
+    // create a new DDoS record entry
+    record = make_shared<DDoSRecord>();
     record->m_prefix = prefix;
-    record->m_type = DDoSRecord::FAKE;
     record->m_fakeNackCounter = 1;
     record->m_validNackCounter = 0;
-    record->m_rateLimiting = false;
-    record->m_lastAllowedInterestCount = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
-    record->m_revertTimerCounter = nack.getHeader().m_timer;
 
-    std::map<FaceId, std::list<Name>> perFaceList;
-
-    // calculate DDoS record per face pushback weight
-    const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
-    double denominator = nackNameList.size();
-    for (const auto& nackName : nackNameList) { // iterate all fake interest names
-      Interest interest(nackName);
-
-      // find corresponding PIT Entry
-      auto entry = pitTable.find(interest);
-      if (entry != nullptr) {
-
-        // iterate its incoming Faces and calculate pushback weight
-        const auto& inRecords = entry->getInRecords();
-        int inFaceNumber = inRecords.size();
-        for (const auto& inRecord: inRecords) {
-          FaceId faceId = inRecord.getFace().getId();
-          auto innerSearch = record->m_pushbackWeight.find(faceId);
-          if (innerSearch == record->m_pushbackWeight.end()) {
-            record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
-          }
-          else {
-            record->m_pushbackWeight[faceId] += 1 / ( denominator * inFaceNumber);
-          }
-          perFaceList[faceId].push_back(nackName);
-        }
-        deleteList.push_back(entry);
-      }
-      else {
-        continue;
-      }
-
+    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      record->m_revertTimerCounter = nack.getHeader().m_timer;
+      record->m_additiveIncreaseCounter = 0;
+      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
     }
+
+    // insert the new DDoS record
     m_ddosRecords[prefix] = record;
-
-    // pushback nacks
-    for (auto it = record->m_pushbackWeight.begin();
-         it != record->m_pushbackWeight.end(); ++it) {
-
-      lp::NackHeader newNackHeader;
-      newNackHeader.m_reason = nack.getHeader().m_reason;
-      newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-      newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second);
-      newNackHeader.m_fakeInterestNames = perFaceList[it->first];
-
-      Interest interest(perFaceList[it->first].front());
-      auto entry = pitTable.find(interest);
-      ndn::lp::Nack newNack(entry->getInterest());
-      newNack.setHeader(newNackHeader);
-      m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
-
-      NFD_LOG_TRACE("SendDDoSNack to downstream");
-      NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_fakeTolerance);
-      NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
-    }
   }
   else {
     // not the first nack
-    // TODO
+    record = m_ddosRecords[prefix];
+    // add the counter in the record
+    record->m_fakeNackCounter++;
+    // update tolerance in the record
+    record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
+    // clear the pushback table
+    record->m_pushbackWeight.clear();
+
+    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      // update the revert timer
+      record->m_revertTimerCounter += nack.getHeader().m_timer;
+      record->m_additiveIncreaseCounter = 0;
+      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
+    }
   }
 
-  for (auto toBeDelete : deleteList) {
-    m_forwarder.ddoSRemovePIT(toBeDelete);
+  // calculate DDoS record per face pushback weight
+  const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
+  double denominator = nackNameList.size();
+  for (const auto& nackName : nackNameList) { // iterate all fake interest names
+    Interest interest(nackName);
+
+    // find corresponding PIT Entry
+    auto entry = pitTable.find(interest);
+    if (entry != nullptr) {
+
+      // iterate its incoming Faces and calculate pushback weight
+      const auto& inRecords = entry->getInRecords();
+      int inFaceNumber = inRecords.size();
+      for (const auto& inRecord: inRecords) {
+        FaceId faceId = inRecord.getFace().getId();
+        auto innerSearch = record->m_pushbackWeight.find(faceId);
+        if (innerSearch == record->m_pushbackWeight.end()) {
+          record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
+        }
+        else {
+          record->m_pushbackWeight[faceId] += 1 / ( denominator * inFaceNumber);
+        }
+        perFaceList[faceId].push_back(nackName);
+      }
+      deleteList.push_back(entry);
+    }
+    else {
+      continue;
+    }
   }
+
+  // pushback nacks to Interest Upstreams
+  for (auto it = record->m_pushbackWeight.begin();
+       it != record->m_pushbackWeight.end(); ++it) {
+
+    lp::NackHeader newNackHeader;
+    newNackHeader.m_reason = nack.getHeader().m_reason;
+    newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
+    newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
+    newNackHeader.m_fakeInterestNames = perFaceList[it->first];
+
+    Interest interest(perFaceList[it->first].front());
+    auto entry = pitTable.find(interest);
+    ndn::lp::Nack newNack(entry->getInterest());
+    newNack.setHeader(newNackHeader);
+    m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
+
+    NFD_LOG_TRACE("SendDDoSNack to downstream");
+    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_fakeTolerance);
+    NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
+  }
+
+      // delete the nacked PIT entries
+      for (auto toBeDelete : deleteList) {
+        m_forwarder.ddoSRemovePIT(toBeDelete);
+      }
+
+    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
+    if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      m_state = DDoS_ATTACK;
+      scheduleApplyRateAndForwardEvent();
+      scheduleRevertStateEvent();
+      NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
+    }
 }
 
 void
@@ -358,6 +357,32 @@ DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
       }
     }
   }
+}
+
+/**
+ * =================================================================================================
+ * ============================* Functions that we don't need to care *=============================
+ * =================================================================================================
+ **/
+
+void
+DDoSStrategy::beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry)
+{
+  // TODO
+}
+
+void
+DDoSStrategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
+                                    const Face& inFace, const Data& data)
+{
+  // TODO
+}
+
+const Name&
+DDoSStrategy::getStrategyName()
+{
+  static Name strategyName("ndn:/localhost/nfd/strategy/ddos/%FD%01");
+  return strategyName;
 }
 
 static bool
