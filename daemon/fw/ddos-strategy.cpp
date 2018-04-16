@@ -64,11 +64,15 @@ DDoSStrategy::revertState()
   std::list<Name> toBeDelete;
   for (auto& recordEntry : m_ddosRecords) {
     auto& record = recordEntry.second;
-    record->m_revertTimerCounter--;
+    if (record->m_revertTimerCounter > 0) {
+      record->m_revertTimerCounter--;
+    }
     if (record->m_revertTimerCounter == 0) {
       // apply additive increase to the tolerance after nack's limit timer
       record->m_fakeInterestTolerance += record->m_additiveIncreaseStep;
+      NFD_LOG_INFO("The new limit on the face is " << record->m_fakeInterestTolerance);
       record->m_additiveIncreaseCounter++;
+      NFD_LOG_INFO("The additive increase counter now is " << record->m_additiveIncreaseCounter);
 
       // when there is no new nack for three times, remove the DDoS Record
       if (record->m_additiveIncreaseCounter == 3) {
@@ -80,12 +84,16 @@ DDoSStrategy::revertState()
   // delete DDoS records that can be deleted
   for (const auto& name : toBeDelete) {
     m_ddosRecords.erase(name);
+    NFD_LOG_DEBUG("Remove DDoS record: " << name);
   }
 
   // if no DDoS records in the list, change state to normal
   if (m_ddosRecords.size() == 0) {
     m_state = DDoS_NORMAL;
     NFD_LOG_DEBUG("Changed state to DDoS_NORMAL");
+  }
+  else {
+    scheduleRevertStateEvent();
   }
 }
 
