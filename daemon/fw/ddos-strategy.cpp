@@ -54,17 +54,6 @@ DDoSStrategy::scheduleRevertStateEvent()
     m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
                                         &DDoSStrategy::revertState, this);
   }
-  else {
-    ns3::Time t = ns3::Simulator::GetDelayLeft(m_revertStateEvent);
-
-    // if the delay is lesser than new NACK timer
-    if (t < ns3::Seconds(m_timer)){
-      // cancel old scheduled event and start new
-      ns3::Simulator::Cancel(m_revertStateEvent);
-      m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
-                                                    &DDoSStrategy::revertState, this);
-    }
-  }
 }
 
 void
