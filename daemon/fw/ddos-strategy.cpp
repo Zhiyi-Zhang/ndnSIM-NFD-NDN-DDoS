@@ -25,25 +25,6 @@ DDoSStrategy::~DDoSStrategy()
 {
 }
 
-static bool
-canForwardToNextHop(const Face& inFace,
-                    shared_ptr<pit::Entry> pitEntry,
-                    const fib::NextHop& nexthop)
-{
-  return !wouldViolateScope(inFace, pitEntry->getInterest(), nexthop.getFace()) &&
-    canForwardToLegacy(*pitEntry, nexthop.getFace());
-}
-
-static bool
-hasFaceForForwarding(const Face& inFace,
-                     const fib::NextHopList& nexthops,
-                     const shared_ptr<pit::Entry>& pitEntry)
-{
-  return std::find_if(nexthops.begin(), nexthops.end(),
-                      bind(&canForwardToNextHop, cref(inFace), pitEntry, _1))
-    != nexthops.end();
-}
-
 void
 DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                const shared_ptr<pit::Entry>& pitEntry)
@@ -71,10 +52,11 @@ void
 DDoSStrategy::scheduleRevertStateEvent()
 {
   NFD_LOG_TRACE("Scheduling revert state event");
-  if (!m_revertStateEvent.IsRunning()) {    
+  if (!m_revertStateEvent.IsRunning()) {
     m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
                                         &DDoSStrategy::revertState, this);
-  } else {
+  }
+  else {
     ns3::Time t = ns3::Simulator::GetDelayLeft(m_revertStateEvent);
 
     // if the delay is lesser than new NACK timer
@@ -82,12 +64,13 @@ DDoSStrategy::scheduleRevertStateEvent()
       // cancel old scheduled event and start new
       ns3::Simulator::Cancel(m_revertStateEvent);
       m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
-                                          &DDoSStrategy::revertState, this);
+                                                    &DDoSStrategy::revertState, this);
     }
   }
 }
 
-void DDoSStrategy::revertState()
+void
+DDoSStrategy::revertState()
 {
   NFD_LOG_TRACE("Reverting state");
   if (m_state == DDoS_ATTACK) {
@@ -227,7 +210,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
 {
   NFD_LOG_TRACE("Handle Nack");
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
-  NFD_LOG_TRACE("Nack fake name list " << nack.getHeader().m_fakeInterestNames.size());
+  NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
   if (m_noApplyRateEventRunsYet && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
     scheduleApplyRateAndForwardEvent();
@@ -334,9 +317,9 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
                                       const shared_ptr<pit::Entry>& pitEntry)
 {
   // first delete the tmp PIT entry
-    if (!pitEntry->hasInRecords()) {
-      this->rejectPendingInterest(pitEntry);
-    }
+  if (!pitEntry->hasInRecords()) {
+    this->rejectPendingInterest(pitEntry);
+  }
 }
 
 void
@@ -369,6 +352,21 @@ DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
       }
     }
   }
+}
+
+static bool
+canForwardToNextHop(const Face& inFace, shared_ptr<pit::Entry> pitEntry, const fib::NextHop& nexthop)
+{
+  return !wouldViolateScope(inFace, pitEntry->getInterest(), nexthop.getFace()) &&
+    canForwardToLegacy(*pitEntry, nexthop.getFace());
+}
+
+static bool
+hasFaceForForwarding(const Face& inFace, const fib::NextHopList& nexthops,
+                     const shared_ptr<pit::Entry>& pitEntry)
+{
+  return std::find_if(nexthops.begin(), nexthops.end(),
+                      bind(&canForwardToNextHop, cref(inFace), pitEntry, _1)) != nexthops.end();
 }
 
 void
