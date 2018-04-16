@@ -89,20 +89,18 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
   NFD_LOG_DEBUG("onIncomingInterest face=" << inFace.getId() <<
                 " interest=" << interest.getName());
   interest.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
+  ++m_counters.nInInterests;
 
   int hopCount = 0;
   auto hopCountTag = interest.getTag<lp::HopCountTag>();
   if (hopCountTag != nullptr) {
     hopCount = *hopCountTag;
   }
-
-  // interest received directly from consumer
-  if (hopCount == 0) {
+  // interest received directly from consumer's NFD
+  if (hopCount == 1) {
     m_routerType = CONSUMER_GATEWAY_ROUTER;
   }
-
   interest.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
-  ++m_counters.nInInterests;
 
   // /localhost scope control
   bool isViolatingLocalhost = inFace.getScope() == ndn::nfd::FACE_SCOPE_NON_LOCAL &&
@@ -327,6 +325,19 @@ Forwarder::onIncomingData(Face& inFace, const Data& data)
   data.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
   ++m_counters.nInData;
 
+  int hopCount = 0;
+  auto hopCountTag = data.getTag<lp::HopCountTag>();
+  if (hopCountTag != nullptr) {
+    hopCount = *hopCountTag;
+  }
+  // data received directly from consumer's local NFD
+  if (hopCount == 1) {
+    m_routerType = PRODUCER_GATEWAY_ROUTER;
+  }
+  data.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
+
+  ++m_counters.nInInterests;
+
   // /localhost scope control
   bool isViolatingLocalhost = inFace.getScope() == ndn::nfd::FACE_SCOPE_NON_LOCAL &&
                               scope_prefix::LOCALHOST.isPrefixOf(data.getName());
@@ -447,18 +458,6 @@ Forwarder::onIncomingNack(Face& inFace, const lp::Nack& nack)
   // receive Nack
   nack.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
   ++m_counters.nInNacks;
-
-  // const auto& nackResaon = nack.getHeader().getReason();
-  // if (nackResaon == ndn::lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD ||
-  //     nackResaon == ndn::lp::NackReason::DDOS_FAKE_INTEREST ||
-  //     nackResaon == ndn::lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
-  //   shared_ptr<pit::Entry> tmpPit;
-  //   bool exists = false;
-  //   std::tie(tmpPit, exists) = m_pit.insert(nack.getInterest());
-  //   this->dispatchToStrategy(*tmpPit,
-  //                            [&] (fw::Strategy& strategy) { strategy.afterReceiveNack(inFace, nack, tmpPit); });
-  //   return;
-  // }
 
   // if multi-access or ad hoc face, drop
   if (inFace.getLinkType() != ndn::nfd::LINK_TYPE_POINT_TO_POINT) {
