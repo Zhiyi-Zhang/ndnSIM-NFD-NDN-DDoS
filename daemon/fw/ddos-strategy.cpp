@@ -13,7 +13,8 @@ NFD_REGISTER_STRATEGY(DDoSStrategy);
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
-  , m_noRunsYet(true)
+  , m_noEventRunsYet(true)
+  , m_timer(0)
   , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
 {
@@ -67,10 +68,40 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
 }
 
 void
-DDoSStrategy::scheduleNextChecks()
+DDoSStrategy::scheduleRevertStateEvent()
 {
-  NFD_LOG_TRACE("Scheduling next check");
-  if (!m_applyRateAndForwardEvent.IsRunning()){
+  NFD_LOG_TRACE("Scheduling revert state event");
+  if (!m_revertStateEvent.IsRunning()) {    
+    m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
+                                        &DDoSStrategy::revertState, this);
+  } else {
+    ns3::Time t = ns3::Simulator::GetDelayLeft(m_revertStateEvent);
+
+    // if the delay is lesser than new NACK timer
+    if (t < ns3::Seconds(m_timer)){
+      // cancel old scheduled event and start new
+      ns3::Simulator::Cancel(m_revertStateEvent);
+      m_revertStateEvent = ns3::Simulator::Schedule(ns3::Seconds(m_timer),
+                                          &DDoSStrategy::revertState, this);
+    }
+  }
+}
+
+void DDoSStrategy::revertState()
+{
+  NFD_LOG_TRACE("Reverting state");
+  if (m_state == DDoS_ATTACK) {
+    m_state = DDoS_NORMAL;
+    m_ddosRecords.clear();
+    NFD_LOG_DEBUG("Changed state to DDoS_NORMAL");
+  }
+}
+
+void
+DDoSStrategy::scheduleApplyRateAndForwardEvent()
+{
+  NFD_LOG_TRACE("Scheduling apply rate and forward event");
+  if (!m_applyRateAndForwardEvent.IsRunning()) {
       m_applyRateAndForwardEvent = ns3::Simulator::Schedule(ns3::Seconds(m_checkWindow),
                                                   &DDoSStrategy::applyRateAndForward, this);
   }
@@ -79,10 +110,6 @@ DDoSStrategy::scheduleNextChecks()
 void
 DDoSStrategy::applyRateAndForward()
 {
-
-  // TODO: Handle end router vs intermediate router separately
-  // TODO: Handle stopping rate limiting
-
   NFD_LOG_TRACE("Applying rate and forwarding");
 
   // for each DDoS record
@@ -140,7 +167,10 @@ DDoSStrategy::applyRateAndForward()
 
     record->m_perFaceInterestBuffer.clear();
   }
-  scheduleNextChecks();
+
+  if (m_state == DDoS_ATTACK) {
+    scheduleApplyRateAndForwardEvent();
+  }
 }
 
 void
@@ -198,11 +228,18 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list " << nack.getHeader().m_fakeInterestNames.size());
 
-  if (m_noRunsYet) {
-    scheduleNextChecks();
-    m_noRunsYet = false;
-    m_state = DDoS_ATTACK;
+  if (m_noEventRunsYet && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+    scheduleApplyRateAndForwardEvent();
+    m_noEventRunsYet = false;
   }
+
+  // no matter the prefix, change state to DDoS_ATTACK
+  m_state = DDoS_ATTACK;
+  NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
+
+  // change the state to DDoS_NORMAL as per NACK timer
+  m_timer = nack.getHeader().m_timer;
+  scheduleRevertStateEvent();
 
   // first delete the tmp PIT entry
   if (!pitEntry->hasInRecords()) {

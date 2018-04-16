@@ -331,6 +331,11 @@ PROTECTED_WITH_TESTS_ELSE_PRIVATE:
   }
 
 public:
+
+  // in case of commonality, priority:
+  // CONSUMER_GATEWAY_ROUTER 
+  //      > PRODUCER_GATEWAY_ROUTER
+  //      > NORMAL_ROUTER
   enum RouterType {
     CONSUMER_GATEWAY_ROUTER,
     PRODUCER_GATEWAY_ROUTER,

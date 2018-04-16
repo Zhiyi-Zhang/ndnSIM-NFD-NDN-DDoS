@@ -89,6 +89,19 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
   NFD_LOG_DEBUG("onIncomingInterest face=" << inFace.getId() <<
                 " interest=" << interest.getName());
   interest.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
+
+  int hopCount = 0;
+  auto hopCountTag = interest.getTag<lp::HopCountTag>();
+  if (hopCountTag != nullptr) {
+    hopCount = *hopCountTag;
+  }
+
+  // interest received directly from consumer
+  if (hopCount == 0) {
+    m_routerType = CONSUMER_GATEWAY_ROUTER;
+  }
+
+  interest.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
   ++m_counters.nInInterests;
 
   // /localhost scope control

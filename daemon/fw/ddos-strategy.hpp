@@ -91,16 +91,25 @@ private:
                   const shared_ptr<pit::Entry>& pitEntry);
 
   void
-  scheduleNextChecks();
+  scheduleApplyRateAndForwardEvent();
 
   void
   applyRateAndForward();
 
+  void
+  scheduleRevertStateEvent();
+
+  void
+  revertState();
+
   friend ProcessNackTraits<DDoSStrategy>;
 
 protected:
-  ns3::EventId m_applyRateAndForwardEvent; ///< @brief EventId of check violation event
-  bool m_noRunsYet;
+  ns3::EventId m_applyRateAndForwardEvent; ///< @brief EventId of apply rate and forward event
+  bool m_noEventRunsYet;
+
+  ns3::EventId m_revertStateEvent; ///< @brief EventId of revert state event
+  uint64_t m_timer;
 
 private:
   // forwarder
@@ -118,9 +127,6 @@ private:
   DDoSRecords m_ddosRecords;
 
   double m_checkWindow = 1;
-
-  // prefixes in last check window
-  // std::set<Name> prefixBuffer;
 
   // last NACK count seen for each prefix
   std::map<Name, int> lastNackCountSeen;
