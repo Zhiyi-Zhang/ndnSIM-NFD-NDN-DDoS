@@ -100,13 +100,13 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
 
     // interest received directly from consumer's NFD
     if (hopCount == 1 && m_routerType != CONSUMER_GATEWAY_ROUTER) {
+      std::cout << m_routerType << std::endl;
       m_routerType = CONSUMER_GATEWAY_ROUTER;
       std::cout << "************** I am a consumer gateway router" << std::endl;
       std::cout << interest.getName() << std::endl;
+      std::cout << "node id " << getNodeId() << std::endl;;
     }
   }
-
-
 
   // /localhost scope control
   bool isViolatingLocalhost = inFace.getScope() == ndn::nfd::FACE_SCOPE_NON_LOCAL &&
@@ -335,12 +335,14 @@ Forwarder::onIncomingData(Face& inFace, const Data& data)
   auto hopCountTag = data.getTag<lp::HopCountTag>();
   if (hopCountTag != nullptr) {
     hopCount = *hopCountTag;
+
+    // data received directly from consumer's local NFD
+    if (hopCount == 1 && m_routerType != PRODUCER_GATEWAY_ROUTER) {
+      m_routerType = PRODUCER_GATEWAY_ROUTER;
+    }
+    data.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
   }
-  // data received directly from consumer's local NFD
-  if (hopCount == 1 && m_routerType != PRODUCER_GATEWAY_ROUTER) {
-    m_routerType = PRODUCER_GATEWAY_ROUTER;
-  }
-  data.setTag(make_shared<lp::IncomingFaceIdTag>(hopCount + 1));
+
 
   ++m_counters.nInInterests;
 
@@ -461,6 +463,7 @@ Forwarder::onOutgoingData(const Data& data, Face& outFace)
 void
 Forwarder::onIncomingNack(Face& inFace, const lp::Nack& nack)
 {
+  std::cout << "I recieve a nack!!!!" << std::endl;
   // receive Nack
   nack.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
   ++m_counters.nInNacks;
@@ -518,6 +521,7 @@ void
 Forwarder::sendDDoSNack(const Face& outFace, const lp::Nack& nack)
 {
   const_cast<Face&>(outFace).sendNack(nack);
+  NFD_LOG_DEBUG("onOutgoing out DDoS Nack");
 }
 
 void

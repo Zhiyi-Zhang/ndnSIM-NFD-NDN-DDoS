@@ -1,8 +1,9 @@
 #include "ddos-strategy.hpp"
 #include "ddos-helper.hpp"
-#include <boost/random/uniform_int_distribution.hpp>
 #include "core/logger.hpp"
 #include "ns3/simulator.h"
+#include <boost/random/uniform_int_distribution.hpp>
+#include <ndn-cxx/lp/tags.hpp>
 
 namespace nfd {
 namespace fw {
@@ -157,7 +158,7 @@ void
 DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                    const shared_ptr<pit::Entry>& pitEntry)
 {
-  NFD_LOG_TRACE("After Receive Interest");
+  // NFD_LOG_TRACE("After Receive Interest");
   if (hasPendingOutRecords(*pitEntry)) {
     // not a new Interest, don't forward
     return;
@@ -176,13 +177,13 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   }
 
   if (!isPrefixUnderDDoS) {
-    NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
+    // NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
     this->doBestRoute(inFace, interest, pitEntry);
   }
   else {
     if (m_forwarder.m_routerType != Forwarder::CONSUMER_GATEWAY_ROUTER) {
       this->doLoadBalancing(inFace, interest, pitEntry);
-      NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
+      // NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
     }
   }
 
@@ -192,7 +193,16 @@ void
 DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
                                      const shared_ptr<pit::Entry>& pitEntry)
 {
-  NFD_LOG_TRACE("Handle Nack");
+  NFD_LOG_TRACE("Handle Fake Nack");
+  NFD_LOG_TRACE("Node ID " << m_forwarder.getNodeId());
+
+  int hopCount = 0;
+  auto hopCountTag = pitEntry->getInterest().getTag<lp::HopCountTag>();
+  if (hopCountTag != nullptr) {
+    hopCount = *hopCountTag;
+    NFD_LOG_TRACE("Interest hop count" << hopCount);
+    NFD_LOG_TRACE("Interest name" << pitEntry->getInterest().getName());
+  }
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
@@ -295,23 +305,23 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     newNack.setHeader(newNackHeader);
     m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
 
-    NFD_LOG_TRACE("SendDDoSNack to downstream");
+    NFD_LOG_TRACE("SendDDoSNack to downstream face " << it->first);
     NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_fakeTolerance);
     NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
   }
 
-      // delete the nacked PIT entries
-      for (auto toBeDelete : deleteList) {
-        m_forwarder.ddoSRemovePIT(toBeDelete);
-      }
+  // delete the nacked PIT entries
+  for (auto toBeDelete : deleteList) {
+    m_forwarder.ddoSRemovePIT(toBeDelete);
+  }
 
-    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
-    if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      m_state = DDoS_ATTACK;
-      scheduleApplyRateAndForwardEvent();
-      scheduleRevertStateEvent();
-      NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-    }
+  // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
+  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+    m_state = DDoS_ATTACK;
+    scheduleApplyRateAndForwardEvent();
+    scheduleRevertStateEvent();
+    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
+  }
 }
 
 void
@@ -401,7 +411,7 @@ void
 DDoSStrategy::doLoadBalancing(const Face& inFace, const Interest& interest,
                               const shared_ptr<pit::Entry>& pitEntry)
 {
-  NFD_LOG_TRACE("InterestForwarding: do load balancing");
+  // NFD_LOG_TRACE("InterestForwarding: do load balancing");
 
   const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
   const fib::NextHopList& nexthops = fibEntry.getNextHops();
@@ -430,7 +440,7 @@ void
 DDoSStrategy::doBestRoute(const Face& inFace, const Interest& interest,
                           const shared_ptr<pit::Entry>& pitEntry)
 {
-  NFD_LOG_TRACE("InterestForwarding: do best route");
+  // NFD_LOG_TRACE("InterestForwarding: do best route");
 
   if (hasPendingOutRecords(*pitEntry)) {
     // not a new Interest, don't forward
