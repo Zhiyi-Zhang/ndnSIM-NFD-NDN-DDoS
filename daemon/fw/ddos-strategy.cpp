@@ -347,14 +347,14 @@ DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
     // forward the nack to all the incoming interfaces
     sendNacks(pitEntry, nack.getHeader());
     m_forwarder.ddoSRemovePIT(pitEntry);
+
     int prefixLen = nack.getHeader().m_prefixLen;
-    //Assuming for simulation that prefixLen-1 would be name of producer
-    Name prefix = nack.getInterest().getName().getPrefix(prefixLen-1);
+    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
     if(nack.getHeader().m_fakeInterestNames.size() > 0){
       Name new_name = nack.getHeader().m_fakeInterestNames.front();
       Fib& fib = m_forwarder.getFib();
       fib.erase(prefix);
-      std::pair<Entry*, bool> insert_return = fib.insert(new_name);
+      std::pair<fib::Entry*, bool> insert_return = fib.insert(new_name);
       if(!std::get<1>(insert_return)){
         NFD_LOG_TRACE("Entry already exists-----ERROR!!!");
       }
