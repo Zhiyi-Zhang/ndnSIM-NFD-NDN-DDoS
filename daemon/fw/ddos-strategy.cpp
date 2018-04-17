@@ -238,11 +238,15 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_validNackCounter = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
 
+    NS_LOG_DEBUG("Setting parameters for consumer router");
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       record->m_revertTimerCounter = nack.getHeader().m_timer;
+      NS_LOG_DEBUG("nack header timer " << nack.getHeader().m_timer);
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
     }
+
+    NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
 
     // insert the new DDoS record
     m_ddosRecords[prefix] = record;
@@ -304,6 +308,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
+    newNackHeader.m_timer = nack.getHeader().m_timer;
     newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
     newNackHeader.m_fakeInterestNames = perFaceList[it->first];
 
