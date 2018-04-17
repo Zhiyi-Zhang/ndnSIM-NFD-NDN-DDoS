@@ -197,6 +197,9 @@ private:
   unique_ptr<Transport> m_transport;
   FaceCounters m_counters;
   uint64_t m_metric;
+
+public:
+  bool m_isConsumerFace;
 };
 
 inline LinkService*

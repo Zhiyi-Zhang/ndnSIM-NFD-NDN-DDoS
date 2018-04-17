@@ -169,7 +169,7 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   for (auto& record : m_ddosRecords) {
     if (record.first.isPrefixOf(interest.getName())) {
       isPrefixUnderDDoS = true;
-      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest.getName());
         NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
       }
@@ -205,6 +205,14 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   }
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
+
+  // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
+  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+    m_state = DDoS_ATTACK;
+    scheduleApplyRateAndForwardEvent();
+    scheduleRevertStateEvent();
+    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
+  }
 
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
 
@@ -273,6 +281,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       int inFaceNumber = inRecords.size();
       for (const auto& inRecord: inRecords) {
         FaceId faceId = inRecord.getFace().getId();
+        std::cout << faceId << std::endl;
         auto innerSearch = record->m_pushbackWeight.find(faceId);
         if (innerSearch == record->m_pushbackWeight.end()) {
           record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
@@ -313,14 +322,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   // delete the nacked PIT entries
   for (auto toBeDelete : deleteList) {
     m_forwarder.ddoSRemovePIT(toBeDelete);
-  }
-
-  // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
-  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-    m_state = DDoS_ATTACK;
-    scheduleApplyRateAndForwardEvent();
-    scheduleRevertStateEvent();
-    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
   }
 }
 
