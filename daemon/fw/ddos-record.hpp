@@ -26,7 +26,7 @@ public: // for consumer router's use ONLY
   int m_revertTimerCounter;
 
   // interest buffer per face in last check window
-  std::map<FaceId, std::list<Name>> m_perFaceInterestBuffer;
+  std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
 
   // has rate limiting started?
   bool m_rateLimiting;

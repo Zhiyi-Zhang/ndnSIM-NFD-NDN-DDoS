@@ -138,8 +138,7 @@ DDoSStrategy::applyForwardWithRateLimit()
           auto innerIt = perFaceBufInterest.second.begin();
           std::advance(innerIt, i);
 
-          Name interest_copy(*innerIt);
-          auto interest = std::make_shared<ndn::Interest>(interest_copy);
+          auto interest = std::make_shared<ndn::Interest>(*innerIt);
           shared_ptr<pit::Entry> pitEntry = m_forwarder.m_pit.find(*interest);
           this->doLoadBalancing(*getFace(faceId), *interest, pitEntry);
           NFD_LOG_INFO("After loop, we sent out Interest " << interest->getName());
@@ -170,7 +169,7 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
     if (record.first.isPrefixOf(interest.getName())) {
       isPrefixUnderDDoS = true;
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
-        record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest.getName());
+        record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
         NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
       }
     }
@@ -239,11 +238,15 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_validNackCounter = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
 
+    NS_LOG_DEBUG("Setting parameters for consumer router");
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       record->m_revertTimerCounter = nack.getHeader().m_timer;
+      NS_LOG_DEBUG("nack header timer " << nack.getHeader().m_timer);
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
     }
+
+    NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
 
     // insert the new DDoS record
     m_ddosRecords[prefix] = record;
@@ -281,7 +284,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       int inFaceNumber = inRecords.size();
       for (const auto& inRecord: inRecords) {
         FaceId faceId = inRecord.getFace().getId();
-        std::cout << faceId << std::endl;
+        std::cout << "face id : " << faceId << " " << inRecord.getFace().m_isConsumerFace  << std::endl;
         auto innerSearch = record->m_pushbackWeight.find(faceId);
         if (innerSearch == record->m_pushbackWeight.end()) {
           record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
@@ -305,6 +308,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
+    newNackHeader.m_timer = nack.getHeader().m_timer;
     newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
     newNackHeader.m_fakeInterestNames = perFaceList[it->first];
 
