@@ -284,7 +284,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       int inFaceNumber = inRecords.size();
       for (const auto& inRecord: inRecords) {
         FaceId faceId = inRecord.getFace().getId();
-        std::cout << "face id : " << faceId << " " << inRecord.getFace().m_isConsumerFace  << std::endl;
         auto innerSearch = record->m_pushbackWeight.find(faceId);
         if (innerSearch == record->m_pushbackWeight.end()) {
           record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
@@ -301,6 +300,8 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     }
   }
 
+  std::cout << "node id :" << m_forwarder.getNodeId() << std::endl
+            << "receiving tolerance" << nack.getHeader().m_fakeTolerance << std::endl;
   // pushback nacks to Interest Upstreams
   for (auto it = record->m_pushbackWeight.begin();
        it != record->m_pushbackWeight.end(); ++it) {
@@ -309,8 +310,16 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
     newNackHeader.m_timer = nack.getHeader().m_timer;
-    newNackHeader.m_fakeTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
+    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
+    if (newTolerance < 1) {
+      // TODO
+    }
+    newNackHeader.m_fakeTolerance = newTolerance;
     newNackHeader.m_fakeInterestNames = perFaceList[it->first];
+
+    std::cout << "\t face id: " << it->first
+              << "\t weight" << it->second
+              << "\t weighted tolerance: " << newTolerance << std::endl;
 
     Interest interest(perFaceList[it->first].front());
     auto entry = pitTable.find(interest);
