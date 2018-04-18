@@ -11,6 +11,9 @@ namespace fw {
 NFD_LOG_INIT("DDoSStrategy");
 NFD_REGISTER_STRATEGY(DDoSStrategy);
 
+const static int MIN_ADDITIVE_INCREASE_STEP = 3;
+const static int DEFAULT_ADDITION_TIMER = 3;
+
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
@@ -76,7 +79,7 @@ DDoSStrategy::revertState()
       NFD_LOG_INFO("The additive increase counter now is " << record->m_additiveIncreaseCounter);
 
       // when there is no new nack for three times, remove the DDoS Record
-      if (record->m_additiveIncreaseCounter == 3) {
+      if (record->m_additiveIncreaseCounter == DEFAULT_ADDITION_TIMER) {
         toBeDelete.push_back(recordEntry.first);
       }
     }
@@ -170,7 +173,7 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
       isPrefixUnderDDoS = true;
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
-        NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
+        // NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
       }
     }
   }
@@ -243,7 +246,10 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       record->m_revertTimerCounter = nack.getHeader().m_timer;
       NS_LOG_DEBUG("nack header timer " << nack.getHeader().m_timer);
       record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
+      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
+      }
     }
 
     NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
@@ -265,7 +271,10 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       // update the revert timer
       record->m_revertTimerCounter += nack.getHeader().m_timer;
       record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / 3 + 1;
+      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
+      }
     }
   }
 

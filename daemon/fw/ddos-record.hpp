@@ -20,6 +20,12 @@ public: // essential field
   // should be reset when new nack arrives
   int m_fakeInterestTolerance;
 
+  // TODO
+  // timestamp of last receiving nack under this prefix
+
+  // TODO
+  // the unique id of last receiving nack under this prefix
+
 public: // for consumer router's use ONLY
 
   // used by revert Event
