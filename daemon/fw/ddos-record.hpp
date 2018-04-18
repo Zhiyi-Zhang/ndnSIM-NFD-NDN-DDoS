@@ -2,6 +2,7 @@
 #define NFD_DAEMON_FW_DDOS_RECORD_HPP
 
 #include "face/face.hpp"
+#include "ns3/nstime.h"
 #include <map>
 
 namespace nfd {
@@ -22,9 +23,11 @@ public: // essential field
 
   // TODO
   // timestamp of last receiving nack under this prefix
+  ns3::Time m_lastNackTimestamp;
 
   // TODO
   // the unique id of last receiving nack under this prefix
+  int m_nackId;
 
 public: // for consumer router's use ONLY
 

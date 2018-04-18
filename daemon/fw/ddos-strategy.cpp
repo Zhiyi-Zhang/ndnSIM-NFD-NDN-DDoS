@@ -68,6 +68,11 @@ DDoSStrategy::revertState()
   std::list<Name> toBeDelete;
   for (auto& recordEntry : m_ddosRecords) {
     auto& record = recordEntry.second;
+
+    // if received NACK is less than m_timer ago, continue
+    if (ns3::Simulator::Now() - record->m_lastNackTimestamp < ns3::Seconds(m_timer)) {
+      continue;
+    }
     if (record->m_revertTimerCounter > 0) {
       record->m_revertTimerCounter--;
     }
@@ -208,14 +213,17 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
-  // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the revert event and rate limit event
-  if (m_state != DDoS_ATTACK && m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+  if (m_state != DDoS_ATTACK){
     m_state = DDoS_ATTACK;
-    scheduleApplyRateAndForwardEvent();
     scheduleRevertStateEvent();
-    NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-  }
 
+    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the rate limit event
+    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+      scheduleApplyRateAndForwardEvent();  
+      NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
+    }
+  }
+  
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
 
   // get PIT table
@@ -237,14 +245,14 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     // create a new DDoS record entry
     record = make_shared<DDoSRecord>();
     record->m_prefix = prefix;
+    record->m_lastNackTimestamp = ns3::Simulator::Now();
+    record->m_nackId = nack.getHeader().m_nackId;
     record->m_fakeNackCounter = 1;
     record->m_validNackCounter = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
 
-    NS_LOG_DEBUG("Setting parameters for consumer router");
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       record->m_revertTimerCounter = nack.getHeader().m_timer;
-      NS_LOG_DEBUG("nack header timer " << nack.getHeader().m_timer);
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
       if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
@@ -260,6 +268,13 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   else {
     // not the first nack
     record = m_ddosRecords[prefix];
+
+    // check if this nack was previously received
+    // do nothing
+    if (nack.getHeader().m_nackId == (unsigned) record->m_nackId) {
+      return;
+    }
+    
     // add the counter in the record
     record->m_fakeNackCounter++;
     // update tolerance in the record
