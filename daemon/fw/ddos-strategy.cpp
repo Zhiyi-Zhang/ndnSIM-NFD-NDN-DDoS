@@ -86,15 +86,20 @@ DDoSStrategy::revertState()
 
       // when there is no new nack for three times, remove the DDoS Record
       if (record->m_additiveIncreaseCounter == DEFAULT_ADDITION_TIMER) {
+        if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+          std::cout << "No new NACK for three times" << std::endl;
+        }
 
         bool underAttack = false;
         for (auto& perFaceBufInterest : record->m_perFaceInterestBuffer) {
           auto interfaceWeightEntry = record->m_pushbackWeight.find(perFaceBufInterest.first);
           int limit = static_cast<int>(interfaceWeightEntry->second * record->m_fakeInterestTolerance + 0.5);
 
+          std::cout<< "per face buf interest size " << perFaceBufInterest.second.size() << " limit " << limit << std::endl;
           // if still under attack
           if (perFaceBufInterest.second.size() >= (unsigned) limit) {
             underAttack = true;
+            std::cout << "Consumer still attacking" << std::endl;
             break;
           }
         }
@@ -103,7 +108,6 @@ DDoSStrategy::revertState()
           //reset
           record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
           record->m_additiveIncreaseCounter = 0;
-          record->m_fakeInterestTolerance -= record->m_additiveIncreaseStep * DEFAULT_ADDITION_TIMER;
         } else {
           toBeDelete.push_back(recordEntry.first);
         }
