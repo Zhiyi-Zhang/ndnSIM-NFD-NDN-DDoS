@@ -479,10 +479,10 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
           else {
             record->m_pushbackWeight[faceId] += 1 / inFaceNumber;
           }
-          auto result = perFaceList.find(faceId);
-          if (result == perFaceList.end()) {
-            perFaceList[faceId] = pitEntry.getInterest().getName();
-          }
+          // auto result = perFaceList.find(faceId);
+          // if (result == perFaceList.end()) {
+          perFaceList[faceId] = pitEntry.getInterest().getName();
+        // }
         }
       }
     }
@@ -500,11 +500,14 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second / totalMatchingInterestNumber + 0.5);
+    it->second = it->second / totalMatchingInterestNumber;
+    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     if (newTolerance < 1) {
       // TODO
     }
     newNackHeader.m_tolerance = newTolerance;
+    newNackHeader.m_fakeInterestNames = nack.getHeader().m_fakeInterestNames;
+
 
     std::cout << "\t face id: " << it->first
               << "\t weight" << it->second
