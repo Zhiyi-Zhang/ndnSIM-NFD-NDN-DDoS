@@ -405,7 +405,7 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
 
   // to record per face Interest list to be nacked
-  std::map<FaceId, shared_ptr<Interest>> perFaceInterest;
+  std::map<FaceId, Name> perFaceList;
 
   // to keep the corresponding DDoS record
   shared_ptr<DDoSRecord> record = nullptr;
@@ -483,10 +483,10 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
           else {
             record->m_pushbackWeight[faceId] += 1 / inFaceNumber;
           }
-          auto result = perFaceInterest.find(faceId);
-          if (result == perFaceInterest.end()) {
-            perFaceInterest[faceId] = make_shared<Interest>(pitEntry.getInterest());
-          }
+          // auto result = perFaceList.find(faceId);
+          // if (result == perFaceList.end()) {
+          perFaceList[faceId] = pitEntry.getInterest().getName();
+        // }
         }
       }
     }
@@ -504,23 +504,25 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second / totalMatchingInterestNumber + 0.5);
+    it->second = it->second / totalMatchingInterestNumber;
+    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     if (newTolerance < 1) {
       // TODO
     }
     newNackHeader.m_tolerance = newTolerance;
+    newNackHeader.m_fakeInterestNames = nack.getHeader().m_fakeInterestNames;
+
 
     std::cout << "\t face id: " << it->first
-              << "\t weight: " << it->second / totalMatchingInterestNumber
+              << "\t weight" << it->second
               << "\t weighted tolerance: " << newTolerance << std::endl;
 
-    auto entry = pitTable.find(*perFaceInterest[it->first]);
+    Interest interest(perFaceList[it->first]);
+    auto entry = pitTable.find(interest);
     ndn::lp::Nack newNack(entry->getInterest());
     newNack.setHeader(newNackHeader);
-
     m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
 
-    std::cout << "nack interest " << entry->getInterest().getName() << std::endl;
     NFD_LOG_TRACE("SendDDoSNack to downstream face " << it->first);
     NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
     NFD_LOG_TRACE("New Nack fake name list (should be 0) " << newNackHeader.m_fakeInterestNames.size());
