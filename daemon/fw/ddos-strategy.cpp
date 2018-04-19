@@ -13,6 +13,7 @@ NFD_REGISTER_STRATEGY(DDoSStrategy);
 
 const static int MIN_ADDITIVE_INCREASE_STEP = 3;
 const static int DEFAULT_ADDITION_TIMER = 3;
+const static int DEFAULT_REVERT_TIME_COUNTER = 3;
 
 DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
@@ -85,7 +86,27 @@ DDoSStrategy::revertState()
 
       // when there is no new nack for three times, remove the DDoS Record
       if (record->m_additiveIncreaseCounter == DEFAULT_ADDITION_TIMER) {
-        toBeDelete.push_back(recordEntry.first);
+
+        bool underAttack = false;
+        for (auto& perFaceBufInterest : record->m_perFaceInterestBuffer) {
+          auto interfaceWeightEntry = record->m_pushbackWeight.find(perFaceBufInterest.first);
+          int limit = static_cast<int>(interfaceWeightEntry->second * record->m_fakeInterestTolerance + 0.5);
+
+          // if still under attack
+          if (perFaceBufInterest.second.size() >= (unsigned) limit) {
+            underAttack = true;
+            break;
+          }
+        }
+        // check if consumers are still attacking
+        if (underAttack) {
+          //reset
+          record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+          record->m_additiveIncreaseCounter = 0;
+          record->m_fakeInterestTolerance -= record->m_additiveIncreaseStep * DEFAULT_ADDITION_TIMER;
+        } else {
+          toBeDelete.push_back(recordEntry.first);
+        }
       }
     }
   }
@@ -244,7 +265,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
 
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      record->m_revertTimerCounter = nack.getHeader().m_timer;
+      record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
       if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
@@ -276,7 +297,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
 
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       // update the revert timer
-      record->m_revertTimerCounter += nack.getHeader().m_timer;
+      record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
       if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
@@ -325,7 +346,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    newNackHeader.m_timer = nack.getHeader().m_timer;
+    newNackHeader.m_timer = DEFAULT_REVERT_TIME_COUNTER;
     int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     if (newTolerance < 1) {
       // TODO
@@ -399,7 +420,7 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
 
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      record->m_revertTimerCounter = nack.getHeader().m_timer;
+      record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
       if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
@@ -431,7 +452,7 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
 
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       // update the revert timer
-      record->m_revertTimerCounter += nack.getHeader().m_timer;
+      record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
       record->m_additiveIncreaseCounter = 0;
       record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
       if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
@@ -480,7 +501,7 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    newNackHeader.m_timer = nack.getHeader().m_timer;
+    newNackHeader.m_timer = DEFAULT_REVERT_TIME_COUNTER;
     int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second / totalMatchingInterestNumber + 0.5);
     if (newTolerance < 1) {
       // TODO

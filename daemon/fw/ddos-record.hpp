@@ -29,13 +29,17 @@ public: // essential field
   // the unique id of last receiving nack under this prefix
   int m_nackId;
 
-public: // for consumer router's use ONLY
+public:
 
   // used by revert Event
   int m_revertTimerCounter;
 
   // interest buffer per face in last check window
   std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
+
+  // is consumer well behaving
+  bool m_isWellBheaving;
+
 
   // has rate limiting started?
   bool m_rateLimiting;
