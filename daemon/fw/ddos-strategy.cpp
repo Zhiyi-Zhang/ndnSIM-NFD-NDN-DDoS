@@ -346,7 +346,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    newNackHeader.m_timer = DEFAULT_REVERT_TIME_COUNTER;
     int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     if (newTolerance < 1) {
       // TODO
@@ -501,7 +500,6 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    newNackHeader.m_timer = DEFAULT_REVERT_TIME_COUNTER;
     int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second / totalMatchingInterestNumber + 0.5);
     if (newTolerance < 1) {
       // TODO
