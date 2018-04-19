@@ -210,7 +210,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     NFD_LOG_TRACE("Interest hop count" << hopCount);
     NFD_LOG_TRACE("Interest name" << pitEntry->getInterest().getName());
   }
-  NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_fakeTolerance);
+  NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_tolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
   if (m_state != DDoS_ATTACK){
@@ -249,7 +249,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_nackId = nack.getHeader().m_nackId;
     record->m_fakeNackCounter = 1;
     record->m_validNackCounter = 0;
-    record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
+    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
 
     if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
       record->m_revertTimerCounter = nack.getHeader().m_timer;
@@ -278,7 +278,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     // add the counter in the record
     record->m_fakeNackCounter++;
     // update tolerance in the record
-    record->m_fakeInterestTolerance = nack.getHeader().m_fakeTolerance;
+    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
     // clear the pushback table
     record->m_pushbackWeight.clear();
 
@@ -325,7 +325,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   }
 
   std::cout << "node id :" << m_forwarder.getNodeId() << std::endl
-            << "receiving tolerance" << nack.getHeader().m_fakeTolerance << std::endl;
+            << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl;
   // pushback nacks to Interest Upstreams
   for (auto it = record->m_pushbackWeight.begin();
        it != record->m_pushbackWeight.end(); ++it) {
@@ -334,11 +334,11 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
     newNackHeader.m_timer = nack.getHeader().m_timer;
-    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_fakeTolerance * it->second + 0.5);
+    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     if (newTolerance < 1) {
       // TODO
     }
-    newNackHeader.m_fakeTolerance = newTolerance;
+    newNackHeader.m_tolerance = newTolerance;
     newNackHeader.m_fakeInterestNames = perFaceList[it->first];
 
     std::cout << "\t face id: " << it->first
@@ -352,7 +352,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
 
     NFD_LOG_TRACE("SendDDoSNack to downstream face " << it->first);
-    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_fakeTolerance);
+    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
     NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
   }
 
