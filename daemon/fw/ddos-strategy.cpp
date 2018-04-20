@@ -20,7 +20,7 @@ DDoSStrategy::DDoSStrategy(Forwarder& forwarder, const Name& name)
   , ProcessNackTraits(this)
   , m_forwarder(forwarder)
   , m_state(DDoS_NORMAL)
-  , m_timer(1)
+  , m_timer(0.1)
 {
   this->setInstanceName(makeInstanceName(name, getStrategyName()));
 }
@@ -44,6 +44,10 @@ DDoSStrategy::revertState()
 {
   NFD_LOG_TRACE("Reverting state");
 
+  if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+    applyForwardWithRateLimit();
+  }
+
   std::list<Name> toBeDelete;
   for (auto& recordEntry : m_ddosRecords) {
     auto& record = recordEntry.second;
@@ -54,10 +58,11 @@ DDoSStrategy::revertState()
     }
 
     if (record->m_revertTimerCounter > 0) {
-      record->m_revertTimerCounter--;
+      record->m_revertTimerCounter -= m_timer;
     }
 
-    if (record->m_revertTimerCounter == 0) {
+    if (record->m_revertTimerCounter <= 0) {
+
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
 
         // init record->m_isGoodConsumer
@@ -69,7 +74,9 @@ DDoSStrategy::revertState()
 
         // apply additive increase to the tolerance after nack's limit timer
         record->m_fakeInterestTolerance += record->m_additiveIncreaseStep;
-        record->m_additiveIncreaseCounter++;
+        record->m_additiveIncreaseCounter += m_timer;
+
+        NFD_LOG_DEBUG("Additive increase, now tolerance is " << record->m_fakeInterestTolerance);
 
         if (record->m_additiveIncreaseCounter == DEFAULT_ADDITION_TIMER + 1) {
           std::list<FaceId> toRemoveLimit;
@@ -113,16 +120,6 @@ DDoSStrategy::revertState()
 }
 
 void
-DDoSStrategy::scheduleApplyRateAndForwardEvent(ns3::Time t)
-{
-  NFD_LOG_TRACE("Scheduling apply rate and forward event");
-  if (!m_applyForwardWithRateLimitEvent.IsRunning()) {
-    m_applyForwardWithRateLimitEvent = ns3::Simulator::Schedule(t, //ns3::Seconds(m_timer),
-                                                  &DDoSStrategy::applyForwardWithRateLimit, this);
-  }
-}
-
-void
 DDoSStrategy::applyForwardWithRateLimit()
 {
   NFD_LOG_TRACE("Applying forwarding with rate limit");
@@ -130,16 +127,32 @@ DDoSStrategy::applyForwardWithRateLimit()
   // for each DDoS record
   for (auto& recordEntry : m_ddosRecords) {
     auto& record = recordEntry.second;
+    NFD_LOG_INFO("DDOS RECORD LOOP :" << recordEntry.first);
 
     // for each face that has Interest buffer under the prefix
     for (auto& perFaceBufInterest : recordEntry.second->m_perFaceInterestBuffer) {
+
       auto& faceId = perFaceBufInterest.first;
+      NFD_LOG_INFO("perFaceBufInterest LOOP " << faceId);
       int limit = 10000;
 
       auto interfaceWeightEntry = record->m_pushbackWeight.find(faceId);
       if (interfaceWeightEntry != record->m_pushbackWeight.end()) {
         // calculate the current rate limit of the face
-        limit = static_cast<int>(interfaceWeightEntry->second * record->m_fakeInterestTolerance + 0.5);
+        double limitDouble = interfaceWeightEntry->second * record->m_fakeInterestTolerance * m_timer;
+        std::cout << limitDouble << std::endl;
+        if (limitDouble > 1) {
+          limit = static_cast<int>(limitDouble + 0.5);
+        }
+        else if (limitDouble > 0.5) {
+          limit = 1;
+        }
+        else if (limitDouble < 0.5) {
+          limit = 0;
+        }
+        else {
+          limit = rand() % 2;
+        }
         NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
         NFD_LOG_INFO("The new limit on the face is " << limit);
 
@@ -166,10 +179,6 @@ DDoSStrategy::applyForwardWithRateLimit()
     }
     record->m_perFaceInterestBuffer.clear();
   }
-
-  if (m_state == DDoS_ATTACK) {
-    scheduleApplyRateAndForwardEvent(ns3::Seconds(m_timer));
-  }
 }
 
 void
@@ -182,24 +191,13 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
   ns3::Time t1 = ns3::Seconds(m_timer);
-  ns3::Time t2 = ns3::Seconds(m_timer);
   if (m_state == DDoS_ATTACK) {
     t1 = ns3::Simulator::GetDelayLeft(m_revertStateEvent);
     ns3::Simulator::Cancel(m_revertStateEvent);
     NFD_LOG_TRACE("Cancel revert event " << t1);
-
-    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the rate limit event
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      t2 = ns3::Simulator::GetDelayLeft(m_applyForwardWithRateLimitEvent);
-      ns3::Simulator::Cancel(m_applyForwardWithRateLimitEvent);
-
-      NFD_LOG_TRACE("Cancel rate and forward event " << t2);
-    }
   }
 
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
-
-  // get PIT table
   auto& pitTable = m_forwarder.m_pit;
 
   // to record the Pit Entry to be removed
@@ -209,50 +207,9 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   std::map<FaceId, std::list<Name>> perFaceList;
 
   // to keep the corresponding DDoS record
-  shared_ptr<DDoSRecord> record = nullptr;
-
-  auto search = m_ddosRecords.find(prefix);
-  if (search == m_ddosRecords.end()) {
-    // the first nack
-    // create a new DDoS record entry
-    record = make_shared<DDoSRecord>();
-    record->m_prefix = prefix;
-    record->m_lastNackTimestamp = ns3::Simulator::Now();
-    record->m_nackId = nack.getHeader().m_nackId;
-    record->m_fakeNackCounter = 1;
-    record->m_validNackCounter = 0;
-    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
-    record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-    record->m_additiveIncreaseCounter = 0;
-    record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-
-    NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
-
-    // insert the new DDoS record
-    m_ddosRecords[prefix] = record;
-  }
-  else {
-    // not the first nack
-    record = m_ddosRecords[prefix];
-
-    // check if this nack was previously received
-    // do nothing
-    if (nack.getHeader().m_nackId == (unsigned) record->m_nackId) {
-      NS_LOG_DEBUG("This is a duplicated Nack");
-      return;
-    }
-
-    // add the counter in the record
-    record->m_fakeNackCounter++;
-    // update tolerance in the record
-    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
-    // clear the pushback table
-    record->m_pushbackWeight.clear();
-
-    // update the revert timer
-    record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
-    record->m_additiveIncreaseCounter = 0;
-    record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
+  shared_ptr<DDoSRecord> record = insertOrUpdateRecord(nack);
+  if (record == nullptr) {
+    return;
   }
 
   // calculate DDoS record per face pushback weight
@@ -268,6 +225,7 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
       // iterate its incoming Faces and calculate pushback weight
       const auto& inRecords = entry->getInRecords();
       int inFaceNumber = inRecords.size();
+      // std::cout << "inFaceNumber : " << inFaceNumber << std::endl;
       for (const auto& inRecord: inRecords) {
         FaceId faceId = inRecord.getFace().getId();
         auto innerSearch = record->m_pushbackWeight.find(faceId);
@@ -327,20 +285,10 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     m_state = DDoS_ATTACK;
     scheduleRevertStateEvent(ns3::Seconds(m_timer));
     NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-
-    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the rate limit event
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      scheduleApplyRateAndForwardEvent(ns3::Seconds(m_timer));
-    }
   }
   else {
     scheduleRevertStateEvent(t1);
-    NFD_LOG_TRACE("Re-schedule the revert event " << t2);
-
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      scheduleApplyRateAndForwardEvent(t2);
-      NFD_LOG_TRACE("Re-schedule the apply rate and forward event " << t2);
-    }
+    NFD_LOG_TRACE("Re-schedule the revert event " << t1);
   }
 }
 
@@ -363,48 +311,9 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
   std::map<FaceId, Name> perFaceList;
 
   // to keep the corresponding DDoS record
-  shared_ptr<DDoSRecord> record = nullptr;
-
-  auto search = m_ddosRecords.find(prefix);
-  if (search == m_ddosRecords.end()) {
-    // the first nack
-    // create a new DDoS record entry
-    record = make_shared<DDoSRecord>();
-    record->m_prefix = prefix;
-    record->m_lastNackTimestamp = ns3::Simulator::Now();
-    record->m_nackId = nack.getHeader().m_nackId;
-    record->m_fakeNackCounter = 0;
-    record->m_validNackCounter = 1;
-    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
-
-    record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-    record->m_additiveIncreaseCounter = 0;
-    record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-
-    // insert the new DDoS record
-    m_ddosRecords[prefix] = record;
-  }
-  else {
-    // not the first nack
-    record = m_ddosRecords[prefix];
-
-    // check if this nack was previously received
-    // do nothing
-    if (nack.getHeader().m_nackId == (unsigned) record->m_nackId) {
-      return;
-    }
-
-    // add the counter in the record
-    record->m_validNackCounter++;
-    // update tolerance in the record
-    record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
-    // clear the pushback table
-    record->m_pushbackWeight.clear();
-
-    // update the revert timer
-    record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
-    record->m_additiveIncreaseCounter = 0;
-    record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
+  shared_ptr<DDoSRecord> record = insertOrUpdateRecord(nack);
+  if (record == nullptr) {
+    return;
   }
 
   int totalMatchingInterestNumber = 0;
@@ -426,10 +335,7 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
           else {
             record->m_pushbackWeight[faceId] += 1 / inFaceNumber;
           }
-          // auto result = perFaceList.find(faceId);
-          // if (result == perFaceList.end()) {
           perFaceList[faceId] = pitEntry.getInterest().getName();
-        // }
         }
       }
     }
@@ -476,12 +382,64 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     m_state = DDoS_ATTACK;
     scheduleRevertStateEvent(ns3::Seconds(m_timer));
     NFD_LOG_DEBUG("Changed state to DDoS_ATTACK");
-
-    // if the router is a CONSUMER_GATEWAY_ROUTER, trigger the rate limit event
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      scheduleApplyRateAndForwardEvent(ns3::Seconds(m_timer));
-    }
   }
+}
+
+shared_ptr<DDoSRecord>
+DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
+{
+  shared_ptr<DDoSRecord> record = nullptr;
+  const auto& nackReason = nack.getReason();
+  Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
+
+  auto search = m_ddosRecords.find(prefix);
+  if (search == m_ddosRecords.end()) {
+    // the first nack
+    // create a new DDoS record entry
+    record = make_shared<DDoSRecord>();
+    record->m_prefix = prefix;
+
+    if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
+      record->m_fakeNackCounter = 1;
+      record->m_validNackCounter = 0;
+      record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
+    }
+    if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
+      record->m_fakeNackCounter = 0;
+      record->m_validNackCounter = 1;
+      record->m_validCapacity = nack.getHeader().m_tolerance;
+    }
+    // insert the new DDoS record
+    m_ddosRecords[prefix] = record;
+  }
+  else {
+    // not the first nack
+    record = m_ddosRecords[prefix];
+
+
+    // check if this nack was previously received
+    if (nack.getHeader().m_nackId == (unsigned) record->m_nackId) {
+      NS_LOG_DEBUG("This is a duplicated Nack");
+      return nullptr;
+    }
+
+    if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
+      record->m_fakeNackCounter++;
+      record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
+    }
+    if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
+      record->m_validNackCounter++;
+      record->m_validCapacity = nack.getHeader().m_tolerance;
+    }
+    // add the counter in the record
+    record->m_pushbackWeight.clear();
+  }
+  record->m_lastNackTimestamp = ns3::Simulator::Now();
+  record->m_nackId = nack.getHeader().m_nackId;
+  record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+  record->m_additiveIncreaseCounter = 0;
+  record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
+  return record;
 }
 
 void
@@ -600,20 +558,20 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
       isPrefixUnderDDoS = true;
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
-        // NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
+        NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
         return;
       }
     }
   }
 
   if (!isPrefixUnderDDoS) {
-    // NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
+    NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
     this->doBestRoute(inFace, interest, pitEntry);
   }
   else {
     if (m_forwarder.m_routerType != Forwarder::CONSUMER_GATEWAY_ROUTER) {
       this->doLoadBalancing(inFace, interest, pitEntry);
-      // NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
+      NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
     }
   }
 

@@ -90,8 +90,8 @@ private:
   doLoadBalancing(const Face& inFace, const Interest& interest,
                   const shared_ptr<pit::Entry>& pitEntry);
 
-  void
-  scheduleApplyRateAndForwardEvent(ns3::Time t);
+  shared_ptr<DDoSRecord>
+  insertOrUpdateRecord(const lp::Nack& nack);
 
   void
   applyForwardWithRateLimit();
@@ -105,7 +105,6 @@ private:
   friend ProcessNackTraits<DDoSStrategy>;
 
 protected:
-  ns3::EventId m_applyForwardWithRateLimitEvent; ///< @brief EventId of apply rate and forward event
 
   ns3::EventId m_revertStateEvent; ///< @brief EventId of revert state event
 
@@ -113,13 +112,11 @@ private:
   // forwarder
   Forwarder& m_forwarder;
 
-  // the state of the state machine
   DDoSState m_state;
 
   DDoSRecords m_ddosRecords;
 
-  // the time unit of revert event and rate limit event
-  uint64_t m_timer;
+  double m_timer;
 };
 
 } // namespace fw

@@ -22,6 +22,8 @@ public: // essential field
   // should be reset when new nack arrives
   int m_fakeInterestTolerance;
 
+  int m_validCapacity;
+
   // timestamp of last receiving nack under this prefix
   ns3::Time m_lastNackTimestamp;
 
@@ -31,10 +33,10 @@ public: // essential field
 public: // used by revert event
 
   // used by revert Event
-  int m_revertTimerCounter;
+  double m_revertTimerCounter;
 
   // if the counter == 3, meaning for 3 checks their is no new nack comes
-  int m_additiveIncreaseCounter;
+  double m_additiveIncreaseCounter;
 
   // the step of additive step, default to be tolerance / 3 + 1
   int m_additiveIncreaseStep;
