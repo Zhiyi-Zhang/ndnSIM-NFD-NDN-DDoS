@@ -36,7 +36,7 @@ public: // used by revert event
   double m_revertTimerCounter;
 
   // if the counter == 3, meaning for 3 checks their is no new nack comes
-  double m_additiveIncreaseCounter;
+  int m_additiveIncreaseCounter;
 
   // the step of additive step, default to be tolerance / 3 + 1
   int m_additiveIncreaseStep;
