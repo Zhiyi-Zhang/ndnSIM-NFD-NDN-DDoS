@@ -181,8 +181,8 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack tolerance " << nack.getHeader().m_tolerance);
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
-  ns3::Time t1;
-  ns3::Time t2;
+  ns3::Time t1 = ns3::Seconds(m_timer);
+  ns3::Time t2 = ns3::Seconds(m_timer);
   if (m_state == DDoS_ATTACK) {
     t1 = ns3::Simulator::GetDelayLeft(m_revertStateEvent);
     ns3::Simulator::Cancel(m_revertStateEvent);
@@ -601,6 +601,7 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
         // NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
+        return;
       }
     }
   }
