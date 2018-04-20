@@ -267,14 +267,11 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_fakeNackCounter = 1;
     record->m_validNackCounter = 0;
     record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
-
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-      record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
-      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
-        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-      }
+    record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+    record->m_additiveIncreaseCounter = 0;
+    record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+    if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+      record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
     }
 
     NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
@@ -299,14 +296,12 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
     // clear the pushback table
     record->m_pushbackWeight.clear();
 
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      // update the revert timer
-      record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
-      record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
-      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
-        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-      }
+    // update the revert timer
+    record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
+    record->m_additiveIncreaseCounter = 0;
+    record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+    if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+      record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
     }
   }
 
@@ -422,16 +417,12 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     record->m_validNackCounter = 1;
     record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
 
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-      record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
-      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
-        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-      }
+    record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+    record->m_additiveIncreaseCounter = 0;
+    record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+    if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+      record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
     }
-
-    NS_LOG_DEBUG("record->m_revertTimerCounter " << record->m_revertTimerCounter);
 
     // insert the new DDoS record
     m_ddosRecords[prefix] = record;
@@ -453,14 +444,12 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     // clear the pushback table
     record->m_pushbackWeight.clear();
 
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      // update the revert timer
-      record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
-      record->m_additiveIncreaseCounter = 0;
-      record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
-      if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
-        record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
-      }
+    // update the revert timer
+    record->m_revertTimerCounter += DEFAULT_REVERT_TIME_COUNTER;
+    record->m_additiveIncreaseCounter = 0;
+    record->m_additiveIncreaseStep = record->m_fakeInterestTolerance / DEFAULT_ADDITION_TIMER + 1;
+    if (record->m_additiveIncreaseStep < MIN_ADDITIVE_INCREASE_STEP) {
+      record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
     }
   }
 
