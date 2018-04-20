@@ -10,6 +10,7 @@ namespace fw {
 
 class DDoSRecord
 {
+
 public: // essential field
   Name m_prefix;
 
@@ -21,36 +22,29 @@ public: // essential field
   // should be reset when new nack arrives
   int m_fakeInterestTolerance;
 
-  // TODO
   // timestamp of last receiving nack under this prefix
   ns3::Time m_lastNackTimestamp;
 
-  // TODO
   // the unique id of last receiving nack under this prefix
   int m_nackId;
 
-public:
+public: // used by revert event
 
   // used by revert Event
   int m_revertTimerCounter;
 
-  // interest buffer per face in last check window
-  std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
-
-  // is consumer well behaving
-  bool m_isWellBheaving;
-
-
-  // has rate limiting started?
-  bool m_rateLimiting;
-
-  // if the counter == 3, meaning for 3 checks their is no new nack comes in
-  // then we can remove the record
-  // should be reset when new nack arrives
+  // if the counter == 3, meaning for 3 checks their is no new nack comes
   int m_additiveIncreaseCounter;
 
   // the step of additive step, default to be tolerance / 3 + 1
   int m_additiveIncreaseStep;
+
+public: // for consumer gateway router only
+
+  // interest buffer per face in last check window
+  std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
+
+  std::map<FaceId, bool> m_isGoodConsumer;
 
 public: // for push back
 

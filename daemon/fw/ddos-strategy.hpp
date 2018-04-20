@@ -91,13 +91,13 @@ private:
                   const shared_ptr<pit::Entry>& pitEntry);
 
   void
-  scheduleApplyRateAndForwardEvent();
+  scheduleApplyRateAndForwardEvent(ns3::Time t);
 
   void
   applyForwardWithRateLimit();
 
   void
-  scheduleRevertStateEvent();
+  scheduleRevertStateEvent(ns3::Time t);
 
   void
   revertState();
