@@ -146,14 +146,8 @@ DDoSStrategy::applyForwardWithRateLimit()
         if (limitDouble > 1) {
           limit = static_cast<int>(limitDouble + 0.5);
         }
-        else if (limitDouble > 0.5) {
-          limit = 1;
-        }
-        else if (limitDouble < 0.5) {
-          limit = 0;
-        }
         else {
-          limit = rand() % 2;
+          limit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
         }
         NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
         NFD_LOG_INFO("The new limit on the face is " << limit);
@@ -201,75 +195,20 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
 
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
   auto& pitTable = m_forwarder.m_pit;
-  const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
-  double denominator = nackNameList.size();
 
   // to record the Pit Entry to be removed
   std::list<shared_ptr<pit::Entry>> deleteList;
-  // to record per face Interest list to be nacked
-  std::map<FaceId, std::list<Name>> perFaceList;
   // to keep the corresponding DDoS record
   shared_ptr<DDoSRecord> record = insertOrUpdateRecord(nack);
   if (record == nullptr) {
     return;
   }
 
-  // calculate DDoS record per face pushback weight
-  for (const auto& nackName : nackNameList) { // iterate all fake interest names
-    Interest interest(nackName);
-
-    // find corresponding PIT Entry
-    auto entry = pitTable.find(interest);
-    if (entry != nullptr) {
-      // iterate its incoming Faces and calculate pushback weight
-      const auto& inRecords = entry->getInRecords();
-      int inFaceNumber = inRecords.size();
-      for (const auto& inRecord: inRecords) {
-        FaceId faceId = inRecord.getFace().getId();
-        auto innerSearch = record->m_pushbackWeight.find(faceId);
-        if (innerSearch == record->m_pushbackWeight.end()) {
-          record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
-        }
-        else {
-          record->m_pushbackWeight[faceId] += 1 / ( denominator * inFaceNumber);
-        }
-        perFaceList[faceId].push_back(nackName);
-      }
-      deleteList.push_back(entry);
-    }
-    else {
-      continue;
-    }
-  }
+  // update pushback map and pushback
+  handleFakePushback(record, nack, deleteList);
 
   std::cout << "node id :" << m_forwarder.getNodeId() << std::endl
             << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl;
-  // pushback nacks to Interest Upstreams
-  for (auto it = record->m_pushbackWeight.begin();
-       it != record->m_pushbackWeight.end(); ++it) {
-
-    lp::NackHeader newNackHeader;
-    newNackHeader.m_reason = nack.getHeader().m_reason;
-    newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
-    newNackHeader.m_nackId = nack.getHeader().m_nackId;
-    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
-    newNackHeader.m_tolerance = newTolerance;
-    newNackHeader.m_fakeInterestNames = perFaceList[it->first];
-
-    std::cout << "\t face id: " << it->first
-              << "\t weight" << it->second
-              << "\t weighted tolerance: " << newTolerance << std::endl;
-
-    Interest interest(perFaceList[it->first].front());
-    auto entry = pitTable.find(interest);
-    ndn::lp::Nack newNack(entry->getInterest());
-    newNack.setHeader(newNackHeader);
-    m_forwarder.sendDDoSNack(*getFace(it->first), newNack);
-
-    NFD_LOG_TRACE("SendDDoSNack to downstream face " << it->first);
-    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
-    NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
-  }
 
   // delete the nacked PIT entries
   for (auto toBeDelete : deleteList) {
@@ -426,14 +365,22 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
 
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
       record->m_fakeNackCounter++;
-      record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
+      // use moving average for now
+      record->m_fakeInterestTolerance = static_cast<int>((record->m_fakeInterestTolerance + nack.getHeader().m_tolerance) / 2 + 0.5);
+      // another choice is to replace the old one with new one directly
+      // record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
+      NS_LOG_DEBUG("The new tolerance is " << record->m_fakeInterestTolerance);
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
       record->m_validNackCounter++;
       record->m_validCapacity = nack.getHeader().m_tolerance;
     }
+
     // add the counter in the record
-    record->m_pushbackWeight.clear();
+    if (record->m_revertTimerCounter <= 0) {
+      record->m_pushbackWeight.clear();
+      NS_LOG_DEBUG("Clear the push back weight map");
+    }
   }
   record->m_lastNackTimestamp = ns3::Simulator::Now();
   record->m_nackId = nack.getHeader().m_nackId;
@@ -441,6 +388,135 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
   record->m_additiveIncreaseCounter = 0;
   record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
   return record;
+}
+
+void
+DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& nack,
+                                 std::list<shared_ptr<pit::Entry>>& deleteList)
+{
+
+  const auto& nackNameList = nack.getHeader().m_fakeInterestNames;
+  double denominator = nackNameList.size();
+  auto& pitTable = m_forwarder.m_pit;
+
+  // to record per face Interest list to be nacked
+  std::map<FaceId, std::list<Name>> perFaceList;
+  std::map<FaceId, double> tempPushBack;
+
+  if (record->m_pushbackWeight.size() != 0) {
+    // the previous pushback weight map is still fresh
+
+    bool hasNewFace = false;
+
+    // first iterate all the PIT entries whose name is listed in nack
+    for (const auto& nackName : nackNameList) { // iterate all fake interest names
+      Interest interest(nackName);
+
+      // find corresponding PIT Entry
+      auto entry = pitTable.find(interest);
+      if (entry != nullptr) {
+        // iterate its incoming Faces and calculate pushback weight
+        const auto& inRecords = entry->getInRecords();
+        int inFaceNumber = inRecords.size();
+        for (const auto& inRecord: inRecords) {
+          FaceId faceId = inRecord.getFace().getId();
+          auto tempSearch = tempPushBack.find(faceId);
+          if (tempSearch == tempPushBack.end()) {
+            tempPushBack[faceId] = 1 / ( denominator * inFaceNumber);
+          }
+          else {
+            tempPushBack[faceId] += 1 / ( denominator * inFaceNumber);
+          }
+          auto innerSearch = record->m_pushbackWeight.find(faceId);
+          if (innerSearch == record->m_pushbackWeight.end()) {
+            hasNewFace = true;
+            NS_LOG_DEBUG("The old pushback list don't have face!!!!! " << faceId);
+          }
+          perFaceList[faceId].push_back(nackName);
+        }
+        deleteList.push_back(entry);
+      }
+      else {
+        continue;
+      }
+    }
+
+    if (hasNewFace) {
+      NS_LOG_DEBUG("Has new Face!!! we need to balance the pushback weight!!!!");
+      // if has new face, balance the new pushback and old push back with proportion 1:1
+      for (const auto& tempEntry : tempPushBack) {
+        auto innerSearch = record->m_pushbackWeight.find(tempEntry.first);
+        if (innerSearch == record->m_pushbackWeight.end()) {
+          hasNewFace = true;
+          record->m_pushbackWeight[tempEntry.first] = tempEntry.second;
+        }
+        else {
+          record->m_pushbackWeight[tempEntry.first] += tempEntry.second;
+        }
+      }
+      for (auto& pushBackEntry : record->m_pushbackWeight) {
+        pushBackEntry.second = static_cast<int> (pushBackEntry.second / 2 + 0.5);
+      }
+    }
+  }
+  else {
+    for (const auto& nackName : nackNameList) { // iterate all fake interest names
+      Interest interest(nackName);
+
+      // find corresponding PIT Entry
+      auto entry = pitTable.find(interest);
+      if (entry != nullptr) {
+        // iterate its incoming Faces and calculate pushback weight
+        const auto& inRecords = entry->getInRecords();
+        int inFaceNumber = inRecords.size();
+        for (const auto& inRecord: inRecords) {
+          FaceId faceId = inRecord.getFace().getId();
+          auto innerSearch = record->m_pushbackWeight.find(faceId);
+          if (innerSearch == record->m_pushbackWeight.end()) {
+            record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
+          }
+          else {
+            record->m_pushbackWeight[faceId] += 1 / ( denominator * inFaceNumber);
+          }
+          perFaceList[faceId].push_back(nackName);
+        }
+        deleteList.push_back(entry);
+      }
+      else {
+        continue;
+      }
+    }
+    tempPushBack = record->m_pushbackWeight;
+  }
+
+  // pushback nacks to Interest Upstreams
+  for (auto pushBackItem : tempPushBack) {
+
+    lp::NackHeader newNackHeader;
+    newNackHeader.m_reason = nack.getHeader().m_reason;
+    newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
+    newNackHeader.m_nackId = nack.getHeader().m_nackId;
+    int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * pushBackItem.second + 0.5);
+    newNackHeader.m_tolerance = newTolerance;
+    newNackHeader.m_fakeInterestNames = perFaceList[pushBackItem.first];
+
+    std::cout << "\t face id: " << pushBackItem.first
+              << "\t weight" << pushBackItem.second
+              << "\t weighted tolerance: " << newTolerance << std::endl;
+
+    std::cout << "name list for this face: " << perFaceList[pushBackItem.first].size() << std::endl;
+
+    Interest interest(perFaceList[pushBackItem.first].front());
+    auto entry = pitTable.find(interest);
+    ndn::lp::Nack newNack(entry->getInterest());
+    newNack.setHeader(newNackHeader);
+    m_forwarder.sendDDoSNack(*getFace(pushBackItem.first), newNack);
+
+    NFD_LOG_TRACE("SendDDoSNack to downstream face " << pushBackItem.first);
+    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
+    NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
+  }
+
 }
 
 void

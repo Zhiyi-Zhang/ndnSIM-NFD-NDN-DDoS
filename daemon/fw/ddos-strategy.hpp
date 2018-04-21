@@ -94,6 +94,10 @@ private:
   insertOrUpdateRecord(const lp::Nack& nack);
 
   void
+  handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& nack,
+                     std::list<shared_ptr<pit::Entry>>& deleteList);
+
+  void
   applyForwardWithRateLimit();
 
   void
