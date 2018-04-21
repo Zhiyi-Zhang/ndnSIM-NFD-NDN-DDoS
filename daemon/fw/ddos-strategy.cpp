@@ -57,12 +57,16 @@ DDoSStrategy::revertState()
       continue;
     }
 
-    if (record->m_revertTimerCounter > 0) {
+    if (record->m_fakeDDoS && record->m_revertTimerCounter > 0) {
       record->m_revertTimerCounter -= m_timer;
     }
+    if (record->m_validOverload && record->m_validRevertTimerCounter > 0) {
+      record->m_validRevertTimerCounter -= m_timer;
+    }
 
-    if (record->m_revertTimerCounter <= 0) {
+    if (record->m_fakeDDoS && record->m_revertTimerCounter <= 0) {
 
+      // fake interest attack
       if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
 
         // init record->m_isGoodConsumer
@@ -93,6 +97,7 @@ DDoSStrategy::revertState()
           }
           if (record->m_pushbackWeight.size() == 0) {
             toBeDelete.push_back(recordEntry.first);
+            record->m_fakeDDoS = false;
           }
           else {
             record->m_additiveIncreaseCounter = 0;
@@ -101,14 +106,62 @@ DDoSStrategy::revertState()
       }
       else {
         toBeDelete.push_back(recordEntry.first);
+        record->m_fakeDDoS = false;
+      }
+    }
+
+    if (record->m_validOverload && record->m_validRevertTimerCounter <= 0) {
+
+      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
+
+        // init record->m_isGoodConsumer
+        if (record->m_validAdditiveIncreaseCounter == 0) {
+          for (const auto& perFacePushBackEntry : record->m_validPushbackWeight) {
+            record->m_validIsGoodConsumer[perFacePushBackEntry.first] = true;
+          }
+        }
+
+        // apply additive increase to the tolerance after nack's limit timer
+        record->m_validAdditiveIncreaseCounter += 1;
+        if (record->m_validAdditiveIncreaseCounter / 10 == 0) {
+          record->m_validCapacity += record->m_additiveIncreaseStep;
+        }
+
+        NFD_LOG_DEBUG("Additive increase, now capability is " << record->m_validCapacity);
+
+        if (record->m_validAdditiveIncreaseCounter >= DEFAULT_ADDITION_TIMER + 1) {
+          std::list<FaceId> toRemoveLimit;
+          for (const auto& perFacePushBackEntry : record->m_validPushbackWeight) {
+            if (record->m_validIsGoodConsumer[perFacePushBackEntry.first]) {
+              toRemoveLimit.push_back(perFacePushBackEntry.first);
+            }
+          }
+          for (const auto& faceId : toRemoveLimit) {
+            record->m_validPushbackWeight.erase(faceId);
+            NFD_LOG_DEBUG("Remove pushback weight record: " << faceId);
+          }
+          if (record->m_validPushbackWeight.size() == 0) {
+            toBeDelete.push_back(recordEntry.first);
+            record->m_validOverload = false;
+          }
+          else {
+            record->m_validAdditiveIncreaseCounter = 0;
+          }
+        }
+      }
+      else {
+        toBeDelete.push_back(recordEntry.first);
+        record->m_validOverload = false;
       }
     }
   }
 
   // delete DDoS records that can be deleted
   for (const auto& name : toBeDelete) {
-    m_ddosRecords.erase(name);
-    NFD_LOG_DEBUG("Remove DDoS record: " << name);
+    if (!m_ddosRecords[name]->m_validOverload && !m_ddosRecords[name]->m_fakeDDoS) {
+      m_ddosRecords.erase(name);
+      NFD_LOG_DEBUG("Remove DDoS record: " << name);
+    }
   }
 
   // if no DDoS records in the list, change state to normal
@@ -136,32 +189,61 @@ DDoSStrategy::applyForwardWithRateLimit()
 
       auto& faceId = perFaceBufInterest.first;
       NFD_LOG_INFO("perFaceBufInterest LOOP " << faceId);
+      int finalLimit = 10000;
       int limit = 10000;
+      int validLimit = 10000;
 
-      auto interfaceWeightEntry = record->m_pushbackWeight.find(faceId);
-      if (interfaceWeightEntry != record->m_pushbackWeight.end()) {
-        // calculate the current rate limit of the face
-        double limitDouble = interfaceWeightEntry->second * record->m_fakeInterestTolerance * m_timer;
-        std::cout << limitDouble << std::endl;
-        if (limitDouble > 1) {
-          limit = static_cast<int>(limitDouble + 0.5);
+      if (record->m_fakeDDoS) {
+        auto interfaceWeightEntry = record->m_pushbackWeight.find(faceId);
+        if (interfaceWeightEntry != record->m_pushbackWeight.end()) {
+          // calculate the current rate limit of the face
+          double limitDouble = interfaceWeightEntry->second * record->m_fakeInterestTolerance * m_timer;
+          std::cout << limitDouble << std::endl;
+          if (limitDouble > 1) {
+            limit = static_cast<int>(limitDouble + 0.5);
+          }
+          else {
+            limit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
+          }
+          NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
+          NFD_LOG_INFO("The new limit on the face is " << limit);
+
+          if (perFaceBufInterest.second.size() > limit) {
+            record->m_isGoodConsumer[faceId] = false;
+          }
         }
         else {
-          limit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
-        }
-        NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
-        NFD_LOG_INFO("The new limit on the face is " << limit);
-
-        if (perFaceBufInterest.second.size() > limit) {
-          record->m_isGoodConsumer[faceId] = false;
+          // there is no more limit on the current face
+          NFD_LOG_INFO("No more rate limit on the face");
         }
       }
-      else {
-        // there is no more limit on the current face
-        NFD_LOG_INFO("No more rate limit on the face");
-      }
 
-      for (int i = 0; i != limit; ++i) {
+      if (record->m_validOverload) {
+        auto interfaceWeightEntry = record->m_validPushbackWeight.find(faceId);
+        if (interfaceWeightEntry != record->m_validPushbackWeight.end()) {
+          // calculate the current rate limit of the face
+          double limitDouble = interfaceWeightEntry->second * record->m_validCapacity * m_timer;
+          std::cout << limitDouble << std::endl;
+          if (limitDouble > 1) {
+            validLimit = static_cast<int>(limitDouble + 0.5);
+          }
+          else {
+            validLimit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
+          }
+          NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
+          NFD_LOG_INFO("The new limit on the face is " << validLimit);
+
+          if (perFaceBufInterest.second.size() > validLimit) {
+            record->m_validIsGoodConsumer[faceId] = false;
+          }
+        }
+        else {
+          // there is no more limit on the current face
+          NFD_LOG_INFO("No more rate limit on the face");
+        }
+      }
+      finalLimit = std::min(limit, validLimit);
+      for (int i = 0; i != finalLimit; ++i) {
         if (perFaceBufInterest.second.size() > (unsigned) i) {
           auto innerIt = perFaceBufInterest.second.begin();
           std::advance(innerIt, i);
@@ -340,10 +422,12 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
 
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
       record->m_fakeDDoS = true;
+      record->m_validOverload = false;
       record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
       record->m_validOverload = true;
+      record->m_fakeDDoS = false;
       record->m_validCapacity = nack.getHeader().m_tolerance;
     }
     // insert the new DDoS record
@@ -709,16 +793,16 @@ DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
       sendNacks(pitEntry, nack.getHeader());
     }
     else {
-      auto& recordEntry = m_ddosRecords[prefix];
-      std::unordered_set<const Face*> downstreams;
-      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
-                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
-      for (const Face* downstream : downstreams) {
-        // if (recordEntry->m_markedInterestPerFace[downstream->getId()] > 0) {
-        //   continue;
-        // }
-        this->sendNack(pitEntry, *downstream, nack.getHeader());
-      }
+      // auto& recordEntry = m_ddosRecords[prefix];
+      // std::unordered_set<const Face*> downstreams;
+      // std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
+      //                [] (const pit::InRecord& inR) { return &inR.getFace(); });
+      // for (const Face* downstream : downstreams) {
+      //   if (recordEntry->m_markedInterestPerFace[downstream->getId()] > 0) {
+      //     continue;
+      //   }
+      //   this->sendNack(pitEntry, *downstream, nack.getHeader());
+      // }
     }
   }
 }

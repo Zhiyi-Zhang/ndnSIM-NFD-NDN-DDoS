@@ -31,6 +31,7 @@ public: // fake interest attack
 
   // pushback weight per face
   std::map<FaceId, double> m_pushbackWeight;
+  std::map<FaceId, bool> m_isGoodConsumer;
 
 
 public: // for valid attack
@@ -45,13 +46,12 @@ public: // for valid attack
   int m_validAdditiveIncreaseCounter;
 
   std::map<FaceId, double> m_validPushbackWeight;
+  std::map<FaceId, bool> m_validIsGoodConsumer;
 
 
 public:
   // interest buffer per face in last check window
   std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
-
-  std::map<FaceId, bool> m_isGoodConsumer;
 };
 
 } // namespace fw
