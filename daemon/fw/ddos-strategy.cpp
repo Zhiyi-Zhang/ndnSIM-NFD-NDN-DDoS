@@ -194,7 +194,6 @@ DDoSStrategy::handleFakeInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Nack fake name list size " << nack.getHeader().m_fakeInterestNames.size());
 
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
-  auto& pitTable = m_forwarder.m_pit;
 
   // to record the Pit Entry to be removed
   std::list<shared_ptr<pit::Entry>> deleteList;
@@ -240,13 +239,11 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
   NFD_LOG_TRACE("Handle Valid Interest Nack");
   NFD_LOG_TRACE("Node ID " << m_forwarder.getNodeId());
   NFD_LOG_TRACE("Valid capacity " << nack.getHeader().m_tolerance);
-  NFD_LOG_TRACE("Nack name list size (should be 0) " << nack.getHeader().m_fakeInterestNames.size());
 
   Name prefix = nack.getInterest().getName().getPrefix(nack.getHeader().m_prefixLen);
 
   // get PIT table
   auto& pitTable = m_forwarder.m_pit;
-  NFD_LOG_TRACE("Current PIT Table size: " << pitTable.size());
 
   // to record per face Interest list to be nacked
   std::map<FaceId, Name> perFaceList;
@@ -269,12 +266,12 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
         ++totalMatchingInterestNumber;
         for (const auto& inRecord: inRecords) {
           FaceId faceId = inRecord.getFace().getId();
-          auto innerSearch = record->m_pushbackWeight.find(faceId);
-          if (innerSearch == record->m_pushbackWeight.end()) {
-            record->m_pushbackWeight[faceId] = 1 / inFaceNumber;
+          auto innerSearch = record->m_validPushbackWeight.find(faceId);
+          if (innerSearch == record->m_validPushbackWeight.end()) {
+            record->m_validPushbackWeight[faceId] = 1 / inFaceNumber;
           }
           else {
-            record->m_pushbackWeight[faceId] += 1 / inFaceNumber;
+            record->m_validPushbackWeight[faceId] += 1 / inFaceNumber;
           }
           perFaceList[faceId] = pitEntry.getInterest().getName();
         }
@@ -287,9 +284,10 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
 
   std::cout << "node id :" << m_forwarder.getNodeId() << std::endl
             << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl;
+
   // pushback nacks to Interest Upstreams
-  for (auto it = record->m_pushbackWeight.begin();
-       it != record->m_pushbackWeight.end(); ++it) {
+  for (auto it = record->m_validPushbackWeight.begin();
+       it != record->m_validPushbackWeight.end(); ++it) {
 
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
@@ -341,13 +339,11 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     record->m_prefix = prefix;
 
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
-      record->m_fakeNackCounter = 1;
-      record->m_validNackCounter = 0;
+      record->m_fakeDDoS = true;
       record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
-      record->m_fakeNackCounter = 0;
-      record->m_validNackCounter = 1;
+      record->m_validOverload = true;
       record->m_validCapacity = nack.getHeader().m_tolerance;
     }
     // insert the new DDoS record
@@ -364,28 +360,43 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     }
 
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
-      record->m_fakeNackCounter++;
+      record->m_fakeDDoS = true;
       // use moving average for now
       record->m_fakeInterestTolerance = static_cast<int>((record->m_fakeInterestTolerance + nack.getHeader().m_tolerance) / 2 + 0.5);
       // another choice is to replace the old one with new one directly
       // record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
       NS_LOG_DEBUG("The new tolerance is " << record->m_fakeInterestTolerance);
+
+      // add the counter in the record
+      if (record->m_revertTimerCounter <= 0) {
+        record->m_pushbackWeight.clear();
+        NS_LOG_DEBUG("Clear the push back weight map");
+      }
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
-      record->m_validNackCounter++;
+      record->m_validOverload = true;
       record->m_validCapacity = nack.getHeader().m_tolerance;
-    }
 
-    // add the counter in the record
-    if (record->m_revertTimerCounter <= 0) {
-      record->m_pushbackWeight.clear();
-      NS_LOG_DEBUG("Clear the push back weight map");
+      // add the counter in the record
+      if (record->m_validRevertTimerCounter <= 0) {
+        record->m_validPushbackWeight.clear();
+        NS_LOG_DEBUG("Clear the push back weight map");
+      }
     }
   }
-  record->m_lastNackTimestamp = ns3::Simulator::Now();
-  record->m_nackId = nack.getHeader().m_nackId;
-  record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-  record->m_additiveIncreaseCounter = 0;
+
+  if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
+    record->m_lastNackTimestamp = ns3::Simulator::Now();
+    record->m_nackId = nack.getHeader().m_nackId;
+    record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+    record->m_additiveIncreaseCounter = 0;
+  }
+  if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
+    record->m_validLastNackTimestamp = ns3::Simulator::Now();
+    record->m_validNackId = nack.getHeader().m_nackId;
+    record->m_validRevertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+    record->m_validAdditiveIncreaseCounter = 0;
+  }
   record->m_additiveIncreaseStep =  MIN_ADDITIVE_INCREASE_STEP;
   return record;
 }
@@ -519,75 +530,12 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
 
 }
 
-void
-DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
-                                   const shared_ptr<pit::Entry>& pitEntry)
-{
-   if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER){
-    // forward the nack to all the incoming interfaces
-    sendNacks(pitEntry, nack.getHeader());
-    m_forwarder.ddoSRemovePIT(pitEntry);
-
-    int prefixLen = nack.getHeader().m_prefixLen;
-    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
-    if(nack.getHeader().m_fakeInterestNames.size() > 0){
-      Name new_name = nack.getHeader().m_fakeInterestNames.front();
-      Fib& fib = m_forwarder.getFib();
-      fib.erase(prefix);
-      std::pair<fib::Entry*, bool> insert_return = fib.insert(new_name);
-      if(!std::get<1>(insert_return)){
-        NFD_LOG_TRACE("Entry already exists-----ERROR!!!");
-      }
-    }
-    else{
-         NFD_LOG_TRACE("No Name found for Name Change");
-    }
-  }
-  else if (m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
-    // forward the nack to all the incoming interfaces
-    sendNacks(pitEntry, nack.getHeader());
-  }
-  else {
-    // forward the nack only to good consumers
-    int prefixLen = nack.getHeader().m_prefixLen;
-    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
-    auto search = m_ddosRecords.find(prefix);
-    if (search == m_ddosRecords.end()) {
-      sendNacks(pitEntry, nack.getHeader());
-    }
-    else {
-      auto& recordEntry = m_ddosRecords[prefix];
-      std::unordered_set<const Face*> downstreams;
-      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
-                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
-      for (const Face* downstream : downstreams) {
-        if (recordEntry->m_markedInterestPerFace[downstream->getId()] > 0) {
-          continue;
-        }
-        this->sendNack(pitEntry, *downstream, nack.getHeader());
-      }
-    }
-  }
-}
-
 /**
  * =================================================================================================
  * ============================* Functions that we don't need to care *=============================
  * =================================================================================================
  **/
 
-void
-DDoSStrategy::beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry)
-{
-  // TODO
-}
-
-void
-DDoSStrategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
-                                    const Face& inFace, const Data& data)
-{
-  // TODO
-}
 
 const Name&
 DDoSStrategy::getStrategyName()
@@ -722,6 +670,57 @@ DDoSStrategy::doBestRoute(const Face& inFace, const Interest& interest,
   }
 
   this->rejectPendingInterest(pitEntry);
+}
+
+void
+DDoSStrategy::handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
+                                   const shared_ptr<pit::Entry>& pitEntry)
+{
+   if (m_forwarder.m_routerType == Forwarder::PRODUCER_GATEWAY_ROUTER){
+    // forward the nack to all the incoming interfaces
+    sendNacks(pitEntry, nack.getHeader());
+    m_forwarder.ddoSRemovePIT(pitEntry);
+
+    int prefixLen = nack.getHeader().m_prefixLen;
+    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
+    if(nack.getHeader().m_fakeInterestNames.size() > 0){
+      Name new_name = nack.getHeader().m_fakeInterestNames.front();
+      Fib& fib = m_forwarder.getFib();
+      fib.erase(prefix);
+      std::pair<fib::Entry*, bool> insert_return = fib.insert(new_name);
+      if(!std::get<1>(insert_return)){
+        NFD_LOG_TRACE("Entry already exists-----ERROR!!!");
+      }
+    }
+    else{
+         NFD_LOG_TRACE("No Name found for Name Change");
+    }
+  }
+  else if (m_forwarder.m_routerType == Forwarder::NORMAL_ROUTER) {
+    // forward the nack to all the incoming interfaces
+    sendNacks(pitEntry, nack.getHeader());
+  }
+  else {
+    // forward the nack only to good consumers
+    int prefixLen = nack.getHeader().m_prefixLen;
+    Name prefix = nack.getInterest().getName().getPrefix(prefixLen);
+    auto search = m_ddosRecords.find(prefix);
+    if (search == m_ddosRecords.end()) {
+      sendNacks(pitEntry, nack.getHeader());
+    }
+    else {
+      auto& recordEntry = m_ddosRecords[prefix];
+      std::unordered_set<const Face*> downstreams;
+      std::transform(pitEntry->in_begin(), pitEntry->in_end(), std::inserter(downstreams, downstreams.end()),
+                     [] (const pit::InRecord& inR) { return &inR.getFace(); });
+      for (const Face* downstream : downstreams) {
+        // if (recordEntry->m_markedInterestPerFace[downstream->getId()] > 0) {
+        //   continue;
+        // }
+        this->sendNack(pitEntry, *downstream, nack.getHeader());
+      }
+    }
+  }
 }
 
 } // namespace fw

@@ -14,47 +14,44 @@ class DDoSRecord
 public: // essential field
   Name m_prefix;
 
-  // count how many DDoS records has been received after the first one
-  int m_fakeNackCounter;
-  int m_validNackCounter;
-
-  // interest number per second
-  // should be reset when new nack arrives
-  int m_fakeInterestTolerance;
-
-  int m_validCapacity;
-
-  // timestamp of last receiving nack under this prefix
-  ns3::Time m_lastNackTimestamp;
-
-  // the unique id of last receiving nack under this prefix
-  int m_nackId;
-
-public: // used by revert event
-
-  // used by revert Event
-  double m_revertTimerCounter;
-
-  // if the counter == 3, meaning for 3 checks their is no new nack comes
-  int m_additiveIncreaseCounter;
-
-  // the step of additive step, default to be tolerance / 3 + 1
+  // the step of additive increase
   int m_additiveIncreaseStep;
 
-public: // for consumer gateway router only
+public: // fake interest attack
+  // Which type of attack is happening
+  bool m_fakeDDoS;
 
-  // interest buffer per face in last check window
-  std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
+  // interest number per second
+  int m_fakeInterestTolerance;
 
-  std::map<FaceId, bool> m_isGoodConsumer;
-
-public: // for push back
+  ns3::Time m_lastNackTimestamp;
+  int m_nackId;
+  double m_revertTimerCounter;
+  int m_additiveIncreaseCounter;
 
   // pushback weight per face
   std::map<FaceId, double> m_pushbackWeight;
 
-  // marked interest number per face under a m_prefix after m_firstNackTimeStamp
-  std::map<FaceId, int> m_markedInterestPerFace;
+
+public: // for valid attack
+  bool m_validOverload;
+
+  // interest number per second
+  int m_validCapacity;
+
+  int m_validNackId;
+  ns3::Time m_validLastNackTimestamp;
+  double m_validRevertTimerCounter;
+  int m_validAdditiveIncreaseCounter;
+
+  std::map<FaceId, double> m_validPushbackWeight;
+
+
+public:
+  // interest buffer per face in last check window
+  std::map<FaceId, std::list<Interest>> m_perFaceInterestBuffer;
+
+  std::map<FaceId, bool> m_isGoodConsumer;
 };
 
 } // namespace fw

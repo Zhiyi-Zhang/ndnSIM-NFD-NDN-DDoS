@@ -53,19 +53,6 @@ public:
   afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                    const shared_ptr<pit::Entry>& pitEntry) override;
 
-  /**
-   * @brief handle Data packets
-   */
-  virtual void
-  beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
-                        const Face& inFace, const Data& data) override;
-
-  /**
-   * @brief used for calculate success ratio
-   */
-  virtual void
-  beforeExpirePendingInterest(const shared_ptr<pit::Entry>& pitEntry) override;
-
 protected:
   boost::random::mt19937 m_randomGenerator;
 
