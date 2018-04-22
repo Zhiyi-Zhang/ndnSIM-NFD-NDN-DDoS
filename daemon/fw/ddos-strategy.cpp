@@ -338,12 +338,14 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
 
   int totalMatchingInterestNumber = 0;
   // calculate DDoS record per face pushback weight
-  for (auto& pitEntry : pitTable) { // iterate all fake interest names
+
+  std::cout << "pitTable size: " << pitTable.size() << std::endl;
+  for (auto& pitEntry : pitTable) { // iterate all interest names
 
     if (prefix.isPrefixOf(pitEntry.getInterest().getName())) {
       // iterate its incoming Faces and calculate pushback weight
       const auto& inRecords = pitEntry.getInRecords();
-      int inFaceNumber = inRecords.size();
+      double inFaceNumber = inRecords.size();
       if (inFaceNumber > 0) {
         ++totalMatchingInterestNumber;
         for (const auto& inRecord: inRecords) {
@@ -351,10 +353,14 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
           auto innerSearch = record->m_validPushbackWeight.find(faceId);
           if (innerSearch == record->m_validPushbackWeight.end()) {
             record->m_validPushbackWeight[faceId] = 1 / inFaceNumber;
+            std::cout << "**No previous record ";
           }
           else {
+            std::cout << "**Has previous record " << record->m_validPushbackWeight[faceId];
             record->m_validPushbackWeight[faceId] += 1 / inFaceNumber;
           }
+          std::cout << "\tfacenumber" << inFaceNumber
+                    << "\t weight " << record->m_validPushbackWeight[faceId] << std::endl;
           perFaceList[faceId] = pitEntry.getInterest().getName();
         }
       }
@@ -375,7 +381,10 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
     newNackHeader.m_nackId = nack.getHeader().m_nackId;
+    std::cout << "before division: " << it->second << "\t totalmatchedInterest: " << totalMatchingInterestNumber << std::endl;
+
     it->second = it->second / totalMatchingInterestNumber;
+
     int newTolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * it->second + 0.5);
     newNackHeader.m_tolerance = newTolerance;
     newNackHeader.m_fakeInterestNames = nack.getHeader().m_fakeInterestNames;
@@ -446,7 +455,8 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
       record->m_fakeDDoS = true;
       // use moving average for now
-      record->m_fakeInterestTolerance = static_cast<int>((record->m_fakeInterestTolerance + nack.getHeader().m_tolerance) / 2 + 0.5);
+      record->m_fakeInterestTolerance = static_cast<int>((record->m_fakeInterestTolerance
+                                                          + nack.getHeader().m_tolerance) / 2 + 0.5);
       // another choice is to replace the old one with new one directly
       // record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
       NS_LOG_DEBUG("The new tolerance is " << record->m_fakeInterestTolerance);
@@ -459,13 +469,9 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
       record->m_validOverload = true;
-      record->m_validCapacity = nack.getHeader().m_tolerance;
-
-      // add the counter in the record
-      if (record->m_validRevertTimerCounter <= 0) {
-        record->m_validPushbackWeight.clear();
-        NS_LOG_DEBUG("Clear the push back weight map");
-      }
+      record->m_validCapacity = static_cast<int>((record->m_validCapacity
+                                                  + nack.getHeader().m_tolerance) / 2 + 0.5);
+      record->m_validPushbackWeight.clear();
     }
   }
 
@@ -512,7 +518,7 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
       if (entry != nullptr) {
         // iterate its incoming Faces and calculate pushback weight
         const auto& inRecords = entry->getInRecords();
-        int inFaceNumber = inRecords.size();
+        double inFaceNumber = inRecords.size();
         for (const auto& inRecord: inRecords) {
           FaceId faceId = inRecord.getFace().getId();
           auto tempSearch = tempPushBack.find(faceId);
