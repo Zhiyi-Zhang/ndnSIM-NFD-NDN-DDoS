@@ -157,10 +157,15 @@ DDoSStrategy::revertState()
   }
 
   // delete DDoS records that can be deleted
+  std::cout << "tobedelete size: " << toBeDelete.size() << std::endl;
   for (const auto& name : toBeDelete) {
-    if (!m_ddosRecords[name]->m_validOverload && !m_ddosRecords[name]->m_fakeDDoS) {
-      m_ddosRecords.erase(name);
-      NFD_LOG_DEBUG("Remove DDoS record: " << name);
+    auto search = m_ddosRecords.find(name);
+    if (search != m_ddosRecords.end()) {
+      if (!m_ddosRecords[name]->m_validOverload && !m_ddosRecords[name]->m_fakeDDoS) {
+        m_ddosRecords.erase(name);
+        NFD_LOG_DEBUG("Remove DDoS record: " << name);
+        std::cout << "tobedelete size: " << toBeDelete.size() << std::endl;
+      }
     }
   }
 
@@ -199,14 +204,13 @@ DDoSStrategy::applyForwardWithRateLimit()
           // calculate the current rate limit of the face
           double limitDouble = interfaceWeightEntry->second * record->m_fakeInterestTolerance * m_timer;
           std::cout << limitDouble << std::endl;
-          if (limitDouble > 1) {
-            limit = static_cast<int>(limitDouble + 0.5);
-          }
-          else {
-            limit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
-          }
-          NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
-          NFD_LOG_INFO("The new limit on the face is " << limit);
+          double fractpart, intpart;
+          fractpart = std::modf(limitDouble , &intpart);
+          int addition = ((double) rand() / (RAND_MAX)) <= fractpart ? 1:0;
+          limit = static_cast<int>(intpart) + addition;
+
+          NFD_LOG_INFO("Fake: The weight is " << interfaceWeightEntry->second);
+          NFD_LOG_INFO("Fake: The new limit on the face is " << limit);
 
           if (perFaceBufInterest.second.size() > limit) {
             record->m_isGoodConsumer[faceId] = false;
@@ -224,14 +228,13 @@ DDoSStrategy::applyForwardWithRateLimit()
           // calculate the current rate limit of the face
           double limitDouble = interfaceWeightEntry->second * record->m_validCapacity * m_timer;
           std::cout << limitDouble << std::endl;
-          if (limitDouble > 1) {
-            validLimit = static_cast<int>(limitDouble + 0.5);
-          }
-          else {
-            validLimit = ((double) rand() / (RAND_MAX)) <= limitDouble ? 1:0;
-          }
-          NFD_LOG_INFO("The weight is " << interfaceWeightEntry->second);
-          NFD_LOG_INFO("The new limit on the face is " << validLimit);
+          double fractpart, intpart;
+          fractpart = std::modf(limitDouble , &intpart);
+          int addition = ((double) rand() / (RAND_MAX)) <= fractpart ? 1:0;
+          validLimit = static_cast<int>(intpart) + addition;
+
+          NFD_LOG_INFO("Valid: The weight is " << interfaceWeightEntry->second);
+          NFD_LOG_INFO("Valid: The new limit on the face is " << validLimit);
 
           if (perFaceBufInterest.second.size() > validLimit) {
             record->m_validIsGoodConsumer[faceId] = false;
@@ -243,6 +246,7 @@ DDoSStrategy::applyForwardWithRateLimit()
         }
       }
       finalLimit = std::min(limit, validLimit);
+      NFD_LOG_INFO("Finally use limit " << finalLimit << " on the face " << faceId);
       for (int i = 0; i != finalLimit; ++i) {
         if (perFaceBufInterest.second.size() > (unsigned) i) {
           auto innerIt = perFaceBufInterest.second.begin();
@@ -353,14 +357,10 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
           auto innerSearch = record->m_validPushbackWeight.find(faceId);
           if (innerSearch == record->m_validPushbackWeight.end()) {
             record->m_validPushbackWeight[faceId] = 1 / inFaceNumber;
-            std::cout << "**No previous record ";
           }
           else {
-            std::cout << "**Has previous record " << record->m_validPushbackWeight[faceId];
             record->m_validPushbackWeight[faceId] += 1 / inFaceNumber;
           }
-          std::cout << "\tfacenumber" << inFaceNumber
-                    << "\t weight " << record->m_validPushbackWeight[faceId] << std::endl;
           perFaceList[faceId] = pitEntry.getInterest().getName();
         }
       }
@@ -671,7 +671,14 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   for (auto& record : m_ddosRecords) {
     if (record.first.isPrefixOf(interest.getName())) {
       isPrefixUnderDDoS = true;
-      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER && inFace.m_isConsumerFace) {
+
+      auto validSearch = record.second->m_pushbackWeight.find(inFace.getId());
+      auto fakeSearch = record.second->m_validPushbackWeight.find(inFace.getId());
+
+      if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER
+          && inFace.m_isConsumerFace
+          && (validSearch != record.second->m_pushbackWeight.end()
+              || fakeSearch != record.second->m_validPushbackWeight.end())) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
         NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest");
         return;
@@ -686,6 +693,7 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
   else {
     if (m_forwarder.m_routerType != Forwarder::CONSUMER_GATEWAY_ROUTER) {
       this->doLoadBalancing(inFace, interest, pitEntry);
+      // this->doBestRoute(inFace, interest, pitEntry);
       NFD_LOG_TRACE("Interest Received with DDoS prefix: load balance Interest");
     }
   }
