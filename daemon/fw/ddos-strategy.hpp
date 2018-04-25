@@ -93,6 +93,9 @@ private:
   void
   revertState();
 
+  Interest
+  findInteretFromFace(const FaceId& id);
+
   friend ProcessNackTraits<DDoSStrategy>;
 
 protected:

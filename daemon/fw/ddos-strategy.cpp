@@ -139,6 +139,17 @@ DDoSStrategy::revertState()
           for (const auto& faceId : toRemoveLimit) {
             record->m_validPushbackWeight.erase(faceId);
             NFD_LOG_DEBUG("Remove pushback weight record: " << faceId);
+
+            auto interest = findInteretFromFace(faceId);
+            ndn::lp::Nack nack(interest);
+            lp::NackHeader nackHeader;
+            nackHeader.m_reason = lp::NackReason::DDOS_RESET_RATE;
+            nackHeader.m_prefixLen = 0;
+            nackHeader.m_tolerance = 0;
+            nackHeader.m_nackId = rand() % 10000;
+            nack.setHeader(nackHeader);
+
+            getFace(faceId)->sendNack(nack);
           }
           if (record->m_validPushbackWeight.size() == 0) {
             toBeDelete.push_back(recordEntry.first);
@@ -146,6 +157,7 @@ DDoSStrategy::revertState()
           }
           else {
             record->m_validAdditiveIncreaseCounter = 0;
+            record->m_validCapacity -= record->m_additiveIncreaseStep * 3;
           }
         }
       }
@@ -157,14 +169,12 @@ DDoSStrategy::revertState()
   }
 
   // delete DDoS records that can be deleted
-  std::cout << "tobedelete size: " << toBeDelete.size() << std::endl;
   for (const auto& name : toBeDelete) {
     auto search = m_ddosRecords.find(name);
     if (search != m_ddosRecords.end()) {
       if (!m_ddosRecords[name]->m_validOverload && !m_ddosRecords[name]->m_fakeDDoS) {
         m_ddosRecords.erase(name);
         NFD_LOG_DEBUG("Remove DDoS record: " << name);
-        std::cout << "tobedelete size: " << toBeDelete.size() << std::endl;
       }
     }
   }
@@ -203,7 +213,6 @@ DDoSStrategy::applyForwardWithRateLimit()
         if (interfaceWeightEntry != record->m_pushbackWeight.end()) {
           // calculate the current rate limit of the face
           double limitDouble = interfaceWeightEntry->second * record->m_fakeInterestTolerance * m_timer;
-          std::cout << limitDouble << std::endl;
           double fractpart, intpart;
           fractpart = std::modf(limitDouble , &intpart);
           int addition = ((double) rand() / (RAND_MAX)) <= fractpart ? 1:0;
@@ -227,16 +236,14 @@ DDoSStrategy::applyForwardWithRateLimit()
         if (interfaceWeightEntry != record->m_validPushbackWeight.end()) {
           // calculate the current rate limit of the face
           double limitDouble = interfaceWeightEntry->second * record->m_validCapacity * m_timer;
-          std::cout << limitDouble << std::endl;
           double fractpart, intpart;
           fractpart = std::modf(limitDouble , &intpart);
           int addition = ((double) rand() / (RAND_MAX)) <= fractpart ? 1:0;
           validLimit = static_cast<int>(intpart) + addition;
-
           NFD_LOG_INFO("Valid: The weight is " << interfaceWeightEntry->second);
           NFD_LOG_INFO("Valid: The new limit on the face is " << validLimit);
 
-          if (perFaceBufInterest.second.size() > validLimit) {
+          if (perFaceBufInterest.second.size() >= validLimit) {
             record->m_validIsGoodConsumer[faceId] = false;
           }
         }
@@ -648,8 +655,11 @@ DDoSStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
   else if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
     this->handleValidInterestNack(inFace, nack, pitEntry);
   }
-  else if (nackReason == lp::NackReason::DDOS_HINT_CHANGE_NOTICE) {
-    this->handleHintChangeNack(inFace, nack, pitEntry);
+  else if (nackReason == lp::NackReason::DDOS_RESET_RATE) {
+    std::cout << "router: i receive a nack with reset rate!!! \n";
+    for (auto& entry : pitEntry->getInRecords()) {
+      entry.getFace().sendNack(nack);
+    }
   }
   else {
     this->processNack(inFace, nack, pitEntry);
@@ -768,6 +778,18 @@ DDoSStrategy::doBestRoute(const Face& inFace, const Interest& interest,
   }
 
   this->rejectPendingInterest(pitEntry);
+}
+
+Interest
+DDoSStrategy::findInteretFromFace(const FaceId& faceId)
+{
+  for (const auto& entry : m_forwarder.m_pit) {
+    for (const auto& inRecord : entry.getInRecords()) {
+      if (inRecord.getFace().getId() == faceId) {
+        return entry.getInterest();
+      }
+    }
+  }
 }
 
 void
