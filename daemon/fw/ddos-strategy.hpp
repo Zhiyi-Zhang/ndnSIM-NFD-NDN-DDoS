@@ -66,10 +66,6 @@ private:
                           const shared_ptr<pit::Entry>& pitEntry);
 
   void
-  handleHintChangeNack(const Face& inFace, const lp::Nack& nack,
-                       const shared_ptr<pit::Entry>& pitEntry);
-
-  void
   doBestRoute(const Face& inFace, const Interest& interest,
               const shared_ptr<pit::Entry>& pitEntry);
 
@@ -92,9 +88,6 @@ private:
 
   void
   revertState();
-
-  Interest
-  findInteretFromFace(const FaceId& id);
 
   friend ProcessNackTraits<DDoSStrategy>;
 

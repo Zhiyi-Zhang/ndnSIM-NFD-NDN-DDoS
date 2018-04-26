@@ -459,6 +459,15 @@ Forwarder::onIncomingNack(Face& inFace, const lp::Nack& nack)
   nack.setTag(make_shared<lp::IncomingFaceIdTag>(inFace.getId()));
   ++m_counters.nInNacks;
 
+  if (nack.getReason() == lp::NackReason::DDOS_RESET_RATE) {
+    for (auto& face : m_faceTable) {
+      if (face.getId() != inFace.getId()) {
+        face.sendNack(nack);
+      }
+    }
+    return;
+  }
+
   // if multi-access or ad hoc face, drop
   if (inFace.getLinkType() != ndn::nfd::LINK_TYPE_POINT_TO_POINT) {
     NFD_LOG_DEBUG("onIncomingNack face=" << inFace.getId() <<

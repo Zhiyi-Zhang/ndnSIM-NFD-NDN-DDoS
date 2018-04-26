@@ -14,9 +14,6 @@ class DDoSRecord
 public: // essential field
   Name m_prefix;
 
-  // the step of additive increase
-  int m_additiveIncreaseStep;
-
 public: // fake interest attack
   // Which type of attack is happening
   bool m_fakeDDoS;
@@ -27,7 +24,6 @@ public: // fake interest attack
   ns3::Time m_lastNackTimestamp;
   int m_nackId;
   double m_revertTimerCounter;
-  int m_additiveIncreaseCounter;
 
   // pushback weight per face
   std::map<FaceId, double> m_pushbackWeight;
@@ -43,7 +39,6 @@ public: // for valid attack
   int m_validNackId;
   ns3::Time m_validLastNackTimestamp;
   double m_validRevertTimerCounter;
-  int m_validAdditiveIncreaseCounter;
 
   std::map<FaceId, double> m_validPushbackWeight;
   std::map<FaceId, bool> m_validIsGoodConsumer;
