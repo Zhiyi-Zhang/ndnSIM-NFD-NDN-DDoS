@@ -70,6 +70,18 @@ DDoSStrategy::revertState()
           for (const auto& faceId : toRemoveLimit) {
             record->m_pushbackWeight.erase(faceId);
             NFD_LOG_DEBUG("Remove pushback weight record: " << faceId);
+
+            ndn::Interest interest(record->m_prefix);
+            ndn::lp::Nack nack(interest);
+            lp::NackHeader nackHeader;
+            nackHeader.m_reason = lp::NackReason::DDOS_RESET_RATE;
+            nackHeader.m_prefixLen = 0;
+            nackHeader.m_tolerance = 0;
+            nackHeader.m_nackId = rand() % 10000;
+            nack.setHeader(nackHeader);
+
+            getFace(faceId)->sendNack(nack);
+            NFD_LOG_DEBUG("Send out RESET RATE nack: " << faceId);
           }
           if (record->m_pushbackWeight.size() == 0) {
             toBeDelete.push_back(recordEntry.first);
@@ -77,7 +89,7 @@ DDoSStrategy::revertState()
           }
           else {
             record->m_revertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-            record->m_fakeInterestTolerance = static_cast<int>(record->m_fakeInterestTolerance / 2 + 0.5);
+            record->m_fakeInterestTolerance = record->m_fakeInterestTolerance / 2;
           }
         }
         else {
@@ -122,7 +134,7 @@ DDoSStrategy::revertState()
           }
           else {
             record->m_validRevertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
-            record->m_validCapacity = static_cast<int>(record->m_validCapacity / 2 + 0.5);
+            record->m_validCapacity = record->m_validCapacity / 2;
           }
         }
         else {
@@ -184,7 +196,7 @@ DDoSStrategy::applyForwardWithRateLimit()
           limit = static_cast<int>(intpart) + addition;
 
           NFD_LOG_INFO("Fake: The weight is " << interfaceWeightEntry->second);
-          NFD_LOG_INFO("Fake: The new limit on the face is " << limit);
+          NFD_LOG_INFO("Fake: The new limit on the face is " << limitDouble << " " << limit);
 
           if (perFaceBufInterest.second.size() > limit + 1) {
             record->m_isGoodConsumer[faceId] = false;
@@ -435,8 +447,8 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     if (nackReason == lp::NackReason::DDOS_FAKE_INTEREST) {
       record->m_fakeDDoS = true;
       // use moving average for now
-      record->m_fakeInterestTolerance = static_cast<int>((record->m_fakeInterestTolerance
-                                                          + nack.getHeader().m_tolerance) / 2 + 0.5);
+      record->m_fakeInterestTolerance = (record->m_fakeInterestTolerance
+                                         + nack.getHeader().m_tolerance) / 2;
       // another choice is to replace the old one with new one directly
       // record->m_fakeInterestTolerance = nack.getHeader().m_tolerance;
       NS_LOG_DEBUG("The new tolerance is " << record->m_fakeInterestTolerance);
@@ -449,8 +461,8 @@ DDoSStrategy::insertOrUpdateRecord(const lp::Nack& nack)
     }
     if (nackReason == lp::NackReason::DDOS_VALID_INTEREST_OVERLOAD) {
       record->m_validOverload = true;
-      record->m_validCapacity = static_cast<int>((record->m_validCapacity
-                                                  + nack.getHeader().m_tolerance) / 2 + 0.5);
+      record->m_validCapacity = (record->m_validCapacity
+                                 + nack.getHeader().m_tolerance) / 2;
       record->m_validPushbackWeight.clear();
     }
   }
@@ -656,14 +668,14 @@ DDoSStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
           && (validSearch != record.second->m_pushbackWeight.end()
               || fakeSearch != record.second->m_validPushbackWeight.end())) {
         record.second->m_perFaceInterestBuffer[inFace.getId()].push_back(interest);
-        NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest " << inFace.getId());
+        // NFD_LOG_TRACE("Interest Received with DDoS prefix: buffer Interest " << inFace.getId());
         return;
       }
     }
   }
 
   if (!isPrefixUnderDDoS) {
-    NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
+    // NFD_LOG_TRACE("Interest Received without DDoS prefix: forward");
     this->doBestRoute(inFace, interest, pitEntry);
   }
   else {

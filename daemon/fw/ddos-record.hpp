@@ -19,7 +19,7 @@ public: // fake interest attack
   bool m_fakeDDoS;
 
   // interest number per second
-  int m_fakeInterestTolerance;
+  double m_fakeInterestTolerance;
 
   ns3::Time m_lastNackTimestamp;
   int m_nackId;
@@ -34,7 +34,7 @@ public: // for valid attack
   bool m_validOverload;
 
   // interest number per second
-  int m_validCapacity;
+  double m_validCapacity;
 
   int m_validNackId;
   ns3::Time m_validLastNackTimestamp;
