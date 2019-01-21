@@ -33,7 +33,7 @@ DDoSStrategy::scheduleRevertStateEvent(ns3::Time t)
   NFD_LOG_TRACE("Scheduling revert state event");
   if (!m_revertStateEvent.IsRunning()) {
     m_revertStateEvent = ns3::Simulator::Schedule(t, // ns3::Seconds(m_timer),
-                                        &DDoSStrategy::revertState, this);
+                                                  &DDoSStrategy::revertState, this);
   }
 }
 
@@ -229,6 +229,8 @@ DDoSStrategy::applyForwardWithRateLimit()
           else {
             record->m_validIsGoodConsumer[faceId] = true;
           }
+          if (limitDouble < 0.3)
+            validLimit = 0;
         }
         else {
           // there is no more limit on the current face
@@ -236,7 +238,7 @@ DDoSStrategy::applyForwardWithRateLimit()
         }
       }
       finalLimit = std::min(limit, validLimit);
-      NFD_LOG_INFO("Finally use limit " << finalLimit << " on the face " << faceId);
+      std::cout << "Finally use limit " << finalLimit << " on the face " << faceId << std::endl;
       for (int i = 0; i != finalLimit; ++i) {
         if (perFaceBufInterest.second.size() > (unsigned) i) {
           auto innerIt = perFaceBufInterest.second.begin();
@@ -360,38 +362,37 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
     }
   }
 
+  double weightForConsumers = 1.0 / record->m_validPushbackWeight.size();
   std::cout << "node id :" << m_forwarder.getNodeId() << std::endl
-            << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl;
+            << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl
+            << "weight for each face" << weightForConsumers << std::endl;
 
   // pushback nacks to Interest Upstreams
-  int counter = 0;
-  double weightForConsumers = 0;
+
+  // for (auto& pushbackEntry : record->m_validPushbackWeight) {
+
+  //   // init isGoodConsumer map
+  //   record->m_validIsGoodConsumer[pushbackEntry.first] = true;
+
+  //   std::cout << "before division: " << pushbackEntry.second << "\t totalmatchedInterest: " << totalMatchingInterestNumber << std::endl;
+  //   pushbackEntry.second = pushbackEntry.second / totalMatchingInterestNumber;
+
+  //   if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER
+  //       && getFace(pushbackEntry.first)->m_isConsumerFace) {
+  //     weightForConsumers += pushbackEntry.second;
+  //     ++counter;
+  //   }
+  // }
   for (auto& pushbackEntry : record->m_validPushbackWeight) {
 
-    // init isGoodConsumer map
     record->m_validIsGoodConsumer[pushbackEntry.first] = true;
-
-    std::cout << "before division: " << pushbackEntry.second << "\t totalmatchedInterest: " << totalMatchingInterestNumber << std::endl;
-    pushbackEntry.second = pushbackEntry.second / totalMatchingInterestNumber;
-
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER
-        && getFace(pushbackEntry.first)->m_isConsumerFace) {
-      weightForConsumers += pushbackEntry.second;
-      ++counter;
-    }
-  }
-  for (auto& pushbackEntry : record->m_validPushbackWeight) {
-
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER
-        && getFace(pushbackEntry.first)->m_isConsumerFace) {
-      pushbackEntry.second = weightForConsumers/counter;
-    }
+    pushbackEntry.second = weightForConsumers;
 
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
     newNackHeader.m_prefixLen = nack.getHeader().m_prefixLen;
     newNackHeader.m_nackId = nack.getHeader().m_nackId;
-    newNackHeader.m_tolerance =  static_cast<uint64_t>(nack.getHeader().m_tolerance * pushbackEntry.second + 0.5);
+    newNackHeader.m_tolerance = static_cast<uint64_t>(nack.getHeader().m_tolerance * pushbackEntry.second + 0.5);
     newNackHeader.m_fakeInterestNames = nack.getHeader().m_fakeInterestNames;
 
     std::cout << "\t face id: " << pushbackEntry.first
@@ -588,29 +589,15 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
         continue;
       }
     }
-    if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER) {
-      double weightForConsumers = 0;
-      int counter = 0;
-      for (auto& pushBackEntry : record->m_pushbackWeight) {
-        if (getFace(pushBackEntry.first)->m_isConsumerFace) {
-          ++counter;
-          weightForConsumers += pushBackEntry.second;
-        }
-      }
-      for (auto& pushBackEntry : record->m_pushbackWeight) {
-        if (getFace(pushBackEntry.first)->m_isConsumerFace) {
-          pushBackEntry.second = weightForConsumers/counter;
-        }
-      }
-    }
-    tempPushBack = record->m_pushbackWeight;
   }
-
+  double newWeight = 1.0 / record->m_pushbackWeight.size();
   // pushback nacks to Interest Upstreams
-  for (auto pushBackItem : tempPushBack) {
+  for (auto pushBackItem : record->m_pushbackWeight) {
 
     // init isGoodConsumer map
     record->m_isGoodConsumer[pushBackItem.first] = true;
+
+    pushBackItem.second = newWeight;
 
     lp::NackHeader newNackHeader;
     newNackHeader.m_reason = nack.getHeader().m_reason;
