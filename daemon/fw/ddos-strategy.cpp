@@ -204,6 +204,8 @@ DDoSStrategy::applyForwardWithRateLimit()
           else {
             record->m_isGoodConsumer[faceId] = true;
           }
+          if (limitDouble < 0.3)
+            limit = 0;
         }
         else {
           // there is no more limit on the current face
@@ -367,22 +369,6 @@ DDoSStrategy::handleValidInterestNack(const Face& inFace, const lp::Nack& nack,
             << "receiving tolerance" << nack.getHeader().m_tolerance << std::endl
             << "weight for each face" << weightForConsumers << std::endl;
 
-  // pushback nacks to Interest Upstreams
-
-  // for (auto& pushbackEntry : record->m_validPushbackWeight) {
-
-  //   // init isGoodConsumer map
-  //   record->m_validIsGoodConsumer[pushbackEntry.first] = true;
-
-  //   std::cout << "before division: " << pushbackEntry.second << "\t totalmatchedInterest: " << totalMatchingInterestNumber << std::endl;
-  //   pushbackEntry.second = pushbackEntry.second / totalMatchingInterestNumber;
-
-  //   if (m_forwarder.m_routerType == Forwarder::CONSUMER_GATEWAY_ROUTER
-  //       && getFace(pushbackEntry.first)->m_isConsumerFace) {
-  //     weightForConsumers += pushbackEntry.second;
-  //     ++counter;
-  //   }
-  // }
   for (auto& pushbackEntry : record->m_validPushbackWeight) {
 
     record->m_validIsGoodConsumer[pushbackEntry.first] = true;
@@ -504,7 +490,6 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
 
   // to record per face Interest list to be nacked
   std::map<FaceId, std::list<Name>> perFaceList;
-  std::map<FaceId, double> tempPushBack;
 
   if (record->m_pushbackWeight.size() != 0) {
     // the previous pushback weight map is still fresh
@@ -523,16 +508,10 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
         double inFaceNumber = inRecords.size();
         for (const auto& inRecord: inRecords) {
           FaceId faceId = inRecord.getFace().getId();
-          auto tempSearch = tempPushBack.find(faceId);
-          if (tempSearch == tempPushBack.end()) {
-            tempPushBack[faceId] = 1 / ( denominator * inFaceNumber);
-          }
-          else {
-            tempPushBack[faceId] += 1 / ( denominator * inFaceNumber);
-          }
           auto innerSearch = record->m_pushbackWeight.find(faceId);
           if (innerSearch == record->m_pushbackWeight.end()) {
             hasNewFace = true;
+            record->m_pushbackWeight[faceId] = 0;
             NS_LOG_DEBUG("The old pushback list don't have face!!!!! " << faceId);
           }
           perFaceList[faceId].push_back(nackName);
@@ -543,26 +522,14 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
         continue;
       }
     }
-
     if (hasNewFace) {
-      NS_LOG_DEBUG("Has new Face!!! we need to balance the pushback weight!!!!");
-      // if has new face, balance the new pushback and old push back with proportion 1:1
-      for (const auto& tempEntry : tempPushBack) {
-        auto innerSearch = record->m_pushbackWeight.find(tempEntry.first);
-        if (innerSearch == record->m_pushbackWeight.end()) {
-          hasNewFace = true;
-          record->m_pushbackWeight[tempEntry.first] = tempEntry.second;
-        }
-        else {
-          record->m_pushbackWeight[tempEntry.first] += tempEntry.second;
-        }
-      }
+      double newWeight = 1.0 / record->m_pushbackWeight.size();
       for (auto& pushBackEntry : record->m_pushbackWeight) {
-        pushBackEntry.second = static_cast<int> (pushBackEntry.second / 2 + 0.5);
+        pushBackEntry.second = newWeight;
       }
     }
   }
-  else {
+  else { // new incoming NACK
     for (const auto& nackName : nackNameList) { // iterate all fake interest names
       Interest interest(nackName);
 
@@ -576,10 +543,7 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
           FaceId faceId = inRecord.getFace().getId();
           auto innerSearch = record->m_pushbackWeight.find(faceId);
           if (innerSearch == record->m_pushbackWeight.end()) {
-            record->m_pushbackWeight[faceId] = 1 / ( denominator * inFaceNumber);
-          }
-          else {
-            record->m_pushbackWeight[faceId] += 1 / ( denominator * inFaceNumber);
+            record->m_pushbackWeight[faceId] = 0;
           }
           perFaceList[faceId].push_back(nackName);
         }
@@ -592,7 +556,7 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
   }
   double newWeight = 1.0 / record->m_pushbackWeight.size();
   // pushback nacks to Interest Upstreams
-  for (auto pushBackItem : record->m_pushbackWeight) {
+  for (auto& pushBackItem : record->m_pushbackWeight) {
 
     // init isGoodConsumer map
     record->m_isGoodConsumer[pushBackItem.first] = true;
@@ -613,15 +577,23 @@ DDoSStrategy::handleFakePushback(shared_ptr<DDoSRecord> record, const lp::Nack& 
 
     std::cout << "name list for this face: " << perFaceList[pushBackItem.first].size() << std::endl;
 
-    Interest interest(perFaceList[pushBackItem.first].front());
-    auto entry = pitTable.find(interest);
-    ndn::lp::Nack newNack(entry->getInterest());
-    newNack.setHeader(newNackHeader);
-    m_forwarder.sendDDoSNack(*getFace(pushBackItem.first), newNack);
+    if (perFaceList[pushBackItem.first].size() > 0) {
+      Interest interest(perFaceList[pushBackItem.first].front());
+      auto entry = pitTable.find(interest);
+      ndn::lp::Nack newNack(entry->getInterest());
+      newNack.setHeader(newNackHeader);
+      m_forwarder.sendDDoSNack(*getFace(pushBackItem.first), newNack);
 
-    NFD_LOG_TRACE("SendDDoSNack to downstream face " << pushBackItem.first);
-    NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
-    NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
+      NFD_LOG_TRACE("SendDDoSNack to downstream face " << pushBackItem.first);
+      NFD_LOG_TRACE("New Nack tolerance " << newNackHeader.m_tolerance);
+      NFD_LOG_TRACE("New Nack fake name list " << newNackHeader.m_fakeInterestNames.size());
+    }
+    else {
+      ndn::Interest interest(record->m_prefix);
+      ndn::lp::Nack newNack(interest);
+      newNack.setHeader(newNackHeader);
+      getFace(pushBackItem.first)->sendNack(newNack);
+    }
   }
 
 }
