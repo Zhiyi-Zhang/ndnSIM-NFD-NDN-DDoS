@@ -100,7 +100,6 @@ DDoSStrategy::revertState()
     }
 
     if (record->m_validOverload && record->m_validRevertTimerCounter > 0) {
-
       record->m_validRevertTimerCounter -= m_timer;
 
       if (record->m_validRevertTimerCounter <= 0) {
@@ -134,7 +133,9 @@ DDoSStrategy::revertState()
           }
           else {
             record->m_validRevertTimerCounter = DEFAULT_REVERT_TIME_COUNTER;
+            NFD_LOG_DEBUG("Now halve the valid capacity!!!! from : " << record->m_validCapacity);
             record->m_validCapacity = record->m_validCapacity / 2;
+            NFD_LOG_DEBUG("to : " << record->m_validCapacity);
           }
         }
         else {
@@ -224,6 +225,7 @@ DDoSStrategy::applyForwardWithRateLimit()
           validLimit = static_cast<int>(intpart) + addition;
           NFD_LOG_INFO("Valid: The weight is " << interfaceWeightEntry->second);
           NFD_LOG_INFO("Valid: The new limit on the face is " << validLimit);
+          NFD_LOG_INFO("Valid: perFaceBufInterest.second.size() is " << perFaceBufInterest.second.size());
 
           if (perFaceBufInterest.second.size() > validLimit + 1) {
             record->m_validIsGoodConsumer[faceId] = false;
@@ -240,7 +242,7 @@ DDoSStrategy::applyForwardWithRateLimit()
         }
       }
       finalLimit = std::min(limit, validLimit);
-      std::cout << "Finally use limit " << finalLimit << " on the face " << faceId << std::endl;
+      // std::cout << "Finally use limit " << finalLimit << " on the face " << faceId << std::endl;
       for (int i = 0; i != finalLimit; ++i) {
         if (perFaceBufInterest.second.size() > (unsigned) i) {
           auto innerIt = perFaceBufInterest.second.begin();
